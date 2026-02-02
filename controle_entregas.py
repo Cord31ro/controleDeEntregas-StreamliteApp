@@ -124,14 +124,27 @@ def adicionar_casa(client, municipio, casa, usuario):
     """Adiciona uma nova casa na planilha"""
     try:
         sheet = client.open_by_url(SHEET_URL)
-        ws_casas = sheet.worksheet("Casas")
-        ws_entregas = sheet.worksheet("Entregas")
+        
+        # Garante que as abas existem
+        try:
+            ws_casas = sheet.worksheet("Casas")
+        except:
+            ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
+            ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
+        
+        try:
+            ws_entregas = sheet.worksheet("Entregas")
+        except:
+            ws_entregas = sheet.add_worksheet(title="Entregas", rows=5000, cols=10)
+            ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
         
         # Verifica se a casa já existe
-        todas_casas = ws_casas.get_all_values()[1:]  # Pula o cabeçalho
-        for linha in todas_casas:
-            if len(linha) >= 2 and linha[0] == municipio and linha[1] == casa:
-                return False, "Casa já cadastrada!"
+        todas_casas = ws_casas.get_all_values()
+        if len(todas_casas) > 1:  # Se tem mais que só o cabeçalho
+            for linha in todas_casas[1:]:
+                if len(linha) >= 2:
+                    if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
+                        return False, "Casa já cadastrada neste município!"
         
         # Adiciona a casa
         data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -141,9 +154,11 @@ def adicionar_casa(client, municipio, casa, usuario):
         for material in MATERIAIS_PADRAO:
             ws_entregas.append_row([municipio, casa, material, "Não", "", ""])
         
-        return True, "Casa adicionada com sucesso!"
+        return True, f"✅ Casa '{casa}' adicionada com sucesso em {municipio}!"
     except Exception as e:
-        return False, f"Erro ao adicionar casa: {e}"
+        import traceback
+        erro_completo = traceback.format_exc()
+        return False, f"Erro ao adicionar casa: {str(e)}\n\nDetalhes: {erro_completo}"
 
 
 def carregar_casas(client):
@@ -303,11 +318,19 @@ def tela_principal():
     # Conecta ao Google Sheets
     client = st.session_state.get("gs_client")
     if not client:
-        st.error("Erro ao conectar com Google Sheets. Verifique as credenciais.")
-        return
+        st.error("❌ Erro ao conectar com Google Sheets. Verifique as credenciais no Secrets.")
+        st.info("👉 Vá em 'Manage app' → 'Settings' → 'Secrets' e configure corretamente.")
+        st.stop()
     
     # Inicializa a planilha
-    inicializar_planilha(client)
+    with st.spinner("Conectando à planilha..."):
+        sheet_result = inicializar_planilha(client)
+        if not sheet_result:
+            st.error("❌ Erro ao acessar a planilha. Verifique se:")
+            st.write("1. A planilha existe e a URL está correta")
+            st.write("2. O service account tem permissão de EDITOR na planilha")
+            st.write(f"3. Email do service account: `controledeentregas@disparo-452622.iam.gserviceaccount.com`")
+            st.stop()
     
     # Tabs
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
@@ -407,31 +430,66 @@ def tela_principal():
     
     # ===== TAB 2: ADICIONAR CASA =====
     with tab2:
-        st.subheader("Adicionar Nova Casa")
+        st.subheader("➕ Adicionar Nova Casa")
+        
+        st.info("💡 Preencha os dados abaixo para cadastrar uma nova casa e seus materiais")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            municipio_novo = st.selectbox("Município", MUNICIPIOS, key="municipio_novo")
+            municipio_novo = st.selectbox("📍 Município", MUNICIPIOS, key="municipio_novo")
         
         with col2:
-            casa_nova = st.text_input("Nome/Número da Casa", placeholder="Ex: Casa 01, Rua A nº 123")
+            casa_nova = st.text_input("🏠 Nome/Número da Casa", placeholder="Ex: Casa 01, Rua A nº 123")
         
-        if st.button("➕ Adicionar Casa", use_container_width=True):
-            if casa_nova.strip():
-                sucesso, msg = adicionar_casa(
-                    client, 
-                    municipio_novo, 
-                    casa_nova.strip(), 
-                    st.session_state.nome_usuario
-                )
-                if sucesso:
-                    st.success(msg)
-                    st.rerun()
-                else:
-                    st.error(msg)
+        st.markdown("---")
+        
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            adicionar = st.button("➕ Adicionar Casa", use_container_width=True, type="primary")
+        
+        with col2:
+            st.caption("Ao adicionar, serão criados automaticamente os registros de todos os materiais padrão para esta casa.")
+        
+        if adicionar:
+            if not casa_nova or not casa_nova.strip():
+                st.error("❌ Por favor, digite o nome da casa!")
             else:
-                st.warning("Digite o nome da casa!")
+                with st.spinner("Adicionando casa..."):
+                    sucesso, msg = adicionar_casa(
+                        client, 
+                        municipio_novo, 
+                        casa_nova.strip(), 
+                        st.session_state.nome_usuario
+                    )
+                    
+                    if sucesso:
+                        st.success(msg)
+                        st.balloons()
+                        st.info("🔄 Recarregando dados...")
+                        # Limpa o cache para forçar reload
+                        if hasattr(st.session_state, 'gs_client'):
+                            del st.session_state.gs_client
+                        st.session_state.gs_client = conectar_google_sheets()
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        
+        # Mostra as casas já cadastradas
+        st.markdown("---")
+        st.subheader("📋 Casas Cadastradas")
+        
+        casas_cadastradas = carregar_casas(client)
+        
+        if casas_cadastradas:
+            for mun in MUNICIPIOS:
+                if mun in casas_cadastradas and casas_cadastradas[mun]:
+                    with st.expander(f"📍 {mun} ({len(casas_cadastradas[mun])} casas)"):
+                        for idx, casa_nome in enumerate(casas_cadastradas[mun], 1):
+                            st.write(f"{idx}. {casa_nome}")
+        else:
+            st.info("Nenhuma casa cadastrada ainda.")
     
     # ===== TAB 3: RELATÓRIO =====
     with tab3:
