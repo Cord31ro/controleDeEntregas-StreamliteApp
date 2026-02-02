@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 import hashlib
+import time
 
 # =====================================================
 # CONFIGURAÇÕES
@@ -70,7 +71,7 @@ USUARIOS = {
 }
 
 # =====================================================
-# FUNÇÕES DO GOOGLE SHEETS
+# FUNÇÕES DO GOOGLE SHEETS COM CACHE
 # =====================================================
 
 @st.cache_resource
@@ -96,31 +97,114 @@ def conectar_google_sheets():
 
 
 def inicializar_planilha(client):
-    """Cria as abas necessárias se não existirem"""
+    """Cria as abas necessárias se não existirem - APENAS UMA VEZ"""
     if not client:
         return None
+    
+    # Verifica se já foi inicializado nesta sessão
+    if "planilha_inicializada" in st.session_state:
+        return st.session_state.planilha_inicializada
         
     try:
         sheet = client.open_by_url(SHEET_URL)
         
-        # Aba de Casas
+        # Verifica/Cria aba de Casas
         try:
             ws_casas = sheet.worksheet("Casas")
         except:
             ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
             ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
+            time.sleep(1)  # Espera 1 segundo entre operações
         
-        # Aba de Entregas
+        # Verifica/Cria aba de Entregas
         try:
             ws_entregas = sheet.worksheet("Entregas")
         except:
             ws_entregas = sheet.add_worksheet(title="Entregas", rows=5000, cols=10)
             ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
+            time.sleep(1)
         
+        # Salva no session_state para não precisar verificar novamente
+        st.session_state.planilha_inicializada = sheet
         return sheet
     except Exception as e:
         st.error(f"Erro ao inicializar planilha: {e}")
         return None
+
+
+def carregar_todos_dados(client):
+    """Carrega TODOS os dados de uma vez só - OTIMIZADO"""
+    if not client:
+        return None, None
+    
+    # Verifica se já carregou recentemente (cache de 30 segundos)
+    agora = time.time()
+    if "ultimo_carregamento" in st.session_state:
+        tempo_decorrido = agora - st.session_state.ultimo_carregamento
+        if tempo_decorrido < 30:  # Se carregou há menos de 30 segundos
+            return st.session_state.dados_casas, st.session_state.dados_entregas
+    
+    try:
+        sheet = client.open_by_url(SHEET_URL)
+        
+        # UMA ÚNICA LEITURA para cada aba
+        ws_casas = sheet.worksheet("Casas")
+        dados_casas = ws_casas.get_all_values()
+        
+        time.sleep(1)  # Pequena pausa entre leituras
+        
+        ws_entregas = sheet.worksheet("Entregas")
+        dados_entregas = ws_entregas.get_all_values()
+        
+        # Salva no cache
+        st.session_state.dados_casas = dados_casas
+        st.session_state.dados_entregas = dados_entregas
+        st.session_state.ultimo_carregamento = agora
+        
+        return dados_casas, dados_entregas
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
+        return None, None
+
+
+def processar_casas(dados_casas):
+    """Processa os dados de casas já carregados"""
+    if not dados_casas or len(dados_casas) <= 1:
+        return {}
+    
+    casas_por_municipio = {}
+    for linha in dados_casas[1:]:  # Pula cabeçalho
+        if len(linha) >= 2:
+            municipio = linha[0]
+            casa = linha[1]
+            
+            if municipio not in casas_por_municipio:
+                casas_por_municipio[municipio] = []
+            
+            if casa not in casas_por_municipio[municipio]:
+                casas_por_municipio[municipio].append(casa)
+    
+    return casas_por_municipio
+
+
+def processar_entregas(dados_entregas, municipio, casa):
+    """Processa as entregas de uma casa específica dos dados já carregados"""
+    if not dados_entregas or len(dados_entregas) <= 1:
+        return []
+    
+    entregas = []
+    for i, linha in enumerate(dados_entregas[1:], start=2):  # Pula cabeçalho, começa da linha 2
+        if len(linha) >= 6:
+            if linha[0] == municipio and linha[1] == casa:
+                entregas.append({
+                    "linha": i,
+                    "material": linha[2],
+                    "entregue": linha[3] == "Sim",
+                    "data_entrega": linha[4],
+                    "confirmado_por": linha[5]
+                })
+    
+    return entregas
 
 
 def adicionar_casa(client, municipio, casa, usuario):
@@ -130,24 +214,13 @@ def adicionar_casa(client, municipio, casa, usuario):
         
     try:
         sheet = client.open_by_url(SHEET_URL)
+        ws_casas = sheet.worksheet("Casas")
+        ws_entregas = sheet.worksheet("Entregas")
         
-        # Garante que as abas existem
-        try:
-            ws_casas = sheet.worksheet("Casas")
-        except:
-            ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
-            ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
-        
-        try:
-            ws_entregas = sheet.worksheet("Entregas")
-        except:
-            ws_entregas = sheet.add_worksheet(title="Entregas", rows=5000, cols=10)
-            ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
-        
-        # Verifica se a casa já existe
-        todas_casas = ws_casas.get_all_values()
-        if len(todas_casas) > 1:  # Se tem mais que só o cabeçalho
-            for linha in todas_casas[1:]:
+        # Verifica se a casa já existe nos dados em cache
+        dados_casas = st.session_state.get("dados_casas", [])
+        if len(dados_casas) > 1:
+            for linha in dados_casas[1:]:
                 if len(linha) >= 2:
                     if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
                         return False, "Casa já cadastrada neste município!"
@@ -155,74 +228,25 @@ def adicionar_casa(client, municipio, casa, usuario):
         # Adiciona a casa
         data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
+        time.sleep(1)
         
         # Adiciona os materiais padrão para esta casa
+        linhas_materiais = []
         for material in MATERIAIS_PADRAO:
-            ws_entregas.append_row([municipio, casa, material, "Não", "", ""])
+            linhas_materiais.append([municipio, casa, material, "Não", "", ""])
+        
+        # Adiciona todos os materiais de uma vez
+        ws_entregas.append_rows(linhas_materiais)
+        
+        # Limpa o cache para forçar recarga
+        if "ultimo_carregamento" in st.session_state:
+            del st.session_state.ultimo_carregamento
         
         return True, f"✅ Casa '{casa}' adicionada com sucesso em {municipio}!"
     except Exception as e:
         import traceback
         erro_completo = traceback.format_exc()
         return False, f"Erro ao adicionar casa: {str(e)}\n\nDetalhes: {erro_completo}"
-
-
-def carregar_casas(client):
-    """Carrega todas as casas cadastradas"""
-    if not client:
-        return {}
-        
-    try:
-        sheet = client.open_by_url(SHEET_URL)
-        ws_casas = sheet.worksheet("Casas")
-        
-        dados = ws_casas.get_all_values()[1:]  # Pula cabeçalho
-        
-        casas_por_municipio = {}
-        for linha in dados:
-            if len(linha) >= 2:
-                municipio = linha[0]
-                casa = linha[1]
-                
-                if municipio not in casas_por_municipio:
-                    casas_por_municipio[municipio] = []
-                
-                if casa not in casas_por_municipio[municipio]:
-                    casas_por_municipio[municipio].append(casa)
-        
-        return casas_por_municipio
-    except Exception as e:
-        st.error(f"Erro ao carregar casas: {e}")
-        return {}
-
-
-def carregar_entregas(client, municipio, casa):
-    """Carrega as entregas de uma casa específica"""
-    if not client:
-        return []
-        
-    try:
-        sheet = client.open_by_url(SHEET_URL)
-        ws_entregas = sheet.worksheet("Entregas")
-        
-        todos_dados = ws_entregas.get_all_values()
-        
-        entregas = []
-        for i, linha in enumerate(todos_dados[1:], start=2):  # Pula cabeçalho, começa da linha 2
-            if len(linha) >= 6:
-                if linha[0] == municipio and linha[1] == casa:
-                    entregas.append({
-                        "linha": i,
-                        "material": linha[2],
-                        "entregue": linha[3] == "Sim",
-                        "data_entrega": linha[4],
-                        "confirmado_por": linha[5]
-                    })
-        
-        return entregas
-    except Exception as e:
-        st.error(f"Erro ao carregar entregas: {e}")
-        return []
 
 
 def marcar_entrega(client, linha, material, usuario):
@@ -235,9 +259,11 @@ def marcar_entrega(client, linha, material, usuario):
         ws_entregas = sheet.worksheet("Entregas")
         
         data_entrega = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
-        # Atualiza a linha específica (colunas D, E, F)
         ws_entregas.update(f'D{linha}:F{linha}', [["Sim", data_entrega, usuario]])
+        
+        # Limpa o cache
+        if "ultimo_carregamento" in st.session_state:
+            del st.session_state.ultimo_carregamento
         
         return True, "Entrega confirmada!"
     except Exception as e:
@@ -253,8 +279,11 @@ def desmarcar_entrega(client, linha):
         sheet = client.open_by_url(SHEET_URL)
         ws_entregas = sheet.worksheet("Entregas")
         
-        # Atualiza a linha específica (colunas D, E, F)
         ws_entregas.update(f'D{linha}:F{linha}', [["Não", "", ""]])
+        
+        # Limpa o cache
+        if "ultimo_carregamento" in st.session_state:
+            del st.session_state.ultimo_carregamento
         
         return True, "Entrega desmarcada!"
     except Exception as e:
@@ -336,44 +365,40 @@ def tela_principal():
     # Conecta ao Google Sheets
     client = st.session_state.get("gs_client")
     
-    # MUDANÇA IMPORTANTE: Mesmo se houver erro, mostra as tabs
-    erro_conexao = False
     if not client:
-        st.error("❌ Erro ao conectar com Google Sheets. Verifique as credenciais no Secrets.")
-        erro_conexao = True
-    
-    # Tenta inicializar a planilha
-    sheet_result = None
-    if client:
-        with st.spinner("Conectando à planilha..."):
-            sheet_result = inicializar_planilha(client)
-            if not sheet_result:
-                st.error("❌ Erro ao acessar a planilha. Verifique as permissões.")
-                erro_conexao = True
-    
-    # Tabs - SEMPRE MOSTRADAS
-    tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
-    
-    # Se houver erro de conexão, mostra mensagem em todas as tabs
-    if erro_conexao:
-        with tab1:
-            st.warning("⚠️ Não é possível acessar os dados. Verifique a conexão com o Google Sheets.")
-            st.info("👉 Vá em 'Manage app' → 'Settings' → 'Secrets' e configure corretamente.")
-        
-        with tab2:
-            st.warning("⚠️ Não é possível adicionar casas. Verifique a conexão com o Google Sheets.")
-            st.info("👉 Vá em 'Manage app' → 'Settings' → 'Secrets' e configure corretamente.")
-        
-        with tab3:
-            st.warning("⚠️ Não é possível gerar relatórios. Verifique a conexão com o Google Sheets.")
-        
+        st.error("❌ Erro ao conectar com Google Sheets.")
+        st.info("👉 Verifique as credenciais em Settings → Secrets")
         return
+    
+    # Inicializa a planilha (só uma vez)
+    sheet_result = inicializar_planilha(client)
+    if not sheet_result:
+        st.error("❌ Erro ao acessar a planilha.")
+        return
+    
+    # CARREGA TODOS OS DADOS UMA ÚNICA VEZ
+    with st.spinner("Carregando dados..."):
+        dados_casas, dados_entregas = carregar_todos_dados(client)
+    
+    if dados_casas is None or dados_entregas is None:
+        st.error("❌ Erro ao carregar dados da planilha.")
+        return
+    
+    # Processa os dados
+    casas_por_municipio = processar_casas(dados_casas)
+    
+    # Botão para recarregar manualmente
+    if st.button("🔄 Recarregar Dados"):
+        if "ultimo_carregamento" in st.session_state:
+            del st.session_state.ultimo_carregamento
+        st.rerun()
+    
+    # Tabs
+    tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
     
     # ===== TAB 1: CONTROLE DE ENTREGAS =====
     with tab1:
         st.subheader("Controle de Entregas")
-        
-        casas_por_municipio = carregar_casas(client)
         
         if not casas_por_municipio:
             st.info("Nenhuma casa cadastrada ainda. Adicione casas na aba 'Adicionar Casa'.")
@@ -386,8 +411,8 @@ def tela_principal():
                 
                 # Exibe cada casa
                 for casa in casas:
-                    with st.expander(f"🏠 {casa}", expanded=True):
-                        entregas = carregar_entregas(client, municipio_selecionado, casa)
+                    with st.expander(f"🏠 {casa}", expanded=False):
+                        entregas = processar_entregas(dados_entregas, municipio_selecionado, casa)
                         
                         if not entregas:
                             st.warning("Nenhum material cadastrado para esta casa.")
@@ -500,9 +525,7 @@ def tela_principal():
                     if sucesso:
                         st.success(msg)
                         st.balloons()
-                        st.info("🔄 Recarregando dados...")
-                        # Limpa o cache para forçar reload
-                        st.cache_resource.clear()
+                        time.sleep(2)
                         st.rerun()
                     else:
                         st.error(msg)
@@ -511,22 +534,18 @@ def tela_principal():
         st.markdown("---")
         st.subheader("📋 Casas Cadastradas")
         
-        casas_cadastradas = carregar_casas(client)
-        
-        if casas_cadastradas:
+        if casas_por_municipio:
             for mun in MUNICIPIOS:
-                if mun in casas_cadastradas and casas_cadastradas[mun]:
-                    with st.expander(f"📍 {mun} ({len(casas_cadastradas[mun])} casas)"):
-                        for idx, casa_nome in enumerate(casas_cadastradas[mun], 1):
+                if mun in casas_por_municipio and casas_por_municipio[mun]:
+                    with st.expander(f"📍 {mun} ({len(casas_por_municipio[mun])} casas)"):
+                        for idx, casa_nome in enumerate(casas_por_municipio[mun], 1):
                             st.write(f"{idx}. {casa_nome}")
         else:
             st.info("Nenhuma casa cadastrada ainda.")
     
     # ===== TAB 3: RELATÓRIO =====
     with tab3:
-        st.subheader("Relatório de Entregas")
-        
-        casas_por_municipio = carregar_casas(client)
+        st.subheader("📊 Relatório de Entregas")
         
         if not casas_por_municipio:
             st.info("Nenhum dado disponível.")
@@ -538,7 +557,7 @@ def tela_principal():
         for municipio in MUNICIPIOS:
             if municipio in casas_por_municipio:
                 for casa in casas_por_municipio[municipio]:
-                    entregas = carregar_entregas(client, municipio, casa)
+                    entregas = processar_entregas(dados_entregas, municipio, casa)
                     
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
@@ -557,6 +576,21 @@ def tela_principal():
         if dados_relatorio:
             df = pd.DataFrame(dados_relatorio)
             st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            # Resumo geral
+            st.markdown("---")
+            st.subheader("📈 Resumo Geral")
+            
+            total_geral = sum(d["Total"] for d in dados_relatorio)
+            entregues_geral = sum(d["Entregues"] for d in dados_relatorio)
+            pendentes_geral = sum(d["Pendentes"] for d in dados_relatorio)
+            perc_geral = (entregues_geral / total_geral * 100) if total_geral > 0 else 0
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total de Materiais", total_geral)
+            col2.metric("Entregues", entregues_geral)
+            col3.metric("Pendentes", pendentes_geral)
+            col4.metric("% Concluído", f"{perc_geral:.1f}%")
         else:
             st.info("Nenhum dado disponível.")
 
