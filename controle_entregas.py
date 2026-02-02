@@ -122,68 +122,43 @@ def inicializar_planilha(client):
 
 def adicionar_casa(client, municipio, casa, usuario):
     """Adiciona uma nova casa na planilha"""
-    print(f"[DEBUG] Iniciando adicionar_casa: {municipio} - {casa}")
-    
     try:
-        print("[DEBUG] Abrindo planilha...")
         sheet = client.open_by_url(SHEET_URL)
-        print(f"[DEBUG] Planilha aberta: {sheet.title}")
         
         # Garante que as abas existem
-        print("[DEBUG] Verificando aba Casas...")
         try:
             ws_casas = sheet.worksheet("Casas")
-            print("[DEBUG] Aba Casas encontrada")
         except:
-            print("[DEBUG] Criando aba Casas...")
             ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
             ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
-            print("[DEBUG] Aba Casas criada")
         
-        print("[DEBUG] Verificando aba Entregas...")
         try:
             ws_entregas = sheet.worksheet("Entregas")
-            print("[DEBUG] Aba Entregas encontrada")
         except:
-            print("[DEBUG] Criando aba Entregas...")
             ws_entregas = sheet.add_worksheet(title="Entregas", rows=5000, cols=10)
             ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
-            print("[DEBUG] Aba Entregas criada")
         
         # Verifica se a casa já existe
-        print("[DEBUG] Verificando se casa já existe...")
         todas_casas = ws_casas.get_all_values()
-        print(f"[DEBUG] Total de linhas na aba Casas: {len(todas_casas)}")
-        
         if len(todas_casas) > 1:  # Se tem mais que só o cabeçalho
-            for idx, linha in enumerate(todas_casas[1:], 1):
+            for linha in todas_casas[1:]:
                 if len(linha) >= 2:
                     if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
-                        print(f"[DEBUG] Casa duplicada encontrada na linha {idx}")
                         return False, "Casa já cadastrada neste município!"
-        
-        print("[DEBUG] Casa não existe, prosseguindo com cadastro...")
         
         # Adiciona a casa
         data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        print(f"[DEBUG] Adicionando linha na aba Casas: [{municipio}, {casa}, {data_cadastro}, {usuario}]")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
-        print("[DEBUG] Casa adicionada com sucesso")
         
         # Adiciona os materiais padrão para esta casa
-        print(f"[DEBUG] Adicionando {len(MATERIAIS_PADRAO)} materiais...")
-        for idx, material in enumerate(MATERIAIS_PADRAO, 1):
-            print(f"[DEBUG] Adicionando material {idx}/{len(MATERIAIS_PADRAO)}: {material}")
+        for material in MATERIAIS_PADRAO:
             ws_entregas.append_row([municipio, casa, material, "Não", "", ""])
         
-        print("[DEBUG] Todos os materiais adicionados com sucesso!")
         return True, f"✅ Casa '{casa}' adicionada com sucesso em {municipio}!"
-        
     except Exception as e:
         import traceback
         erro_completo = traceback.format_exc()
-        print(f"[DEBUG] ERRO: {erro_completo}")
-        return False, f"Erro ao adicionar casa: {str(e)}\n\nDetalhes:\n{erro_completo}"
+        return False, f"Erro ao adicionar casa: {str(e)}\n\nDetalhes: {erro_completo}"
 
 
 def carregar_casas(client):
@@ -459,22 +434,6 @@ def tela_principal():
         
         st.info("💡 Preencha os dados abaixo para cadastrar uma nova casa e seus materiais")
         
-        # Debug: Mostra status da conexão
-        with st.expander("🔍 Debug - Status da Conexão"):
-            st.write("**Client conectado:**", client is not None)
-            if client:
-                try:
-                    sheet = client.open_by_url(SHEET_URL)
-                    st.success(f"✅ Planilha acessada: {sheet.title}")
-                    
-                    # Lista as abas existentes
-                    worksheets = sheet.worksheets()
-                    st.write("**Abas encontradas:**")
-                    for ws in worksheets:
-                        st.write(f"- {ws.title} ({ws.row_count} linhas)")
-                except Exception as e:
-                    st.error(f"❌ Erro ao acessar planilha: {e}")
-        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -494,56 +453,43 @@ def tela_principal():
             st.caption("Ao adicionar, serão criados automaticamente os registros de todos os materiais padrão para esta casa.")
         
         if adicionar:
-            st.write(f"**DEBUG:** Tentando adicionar casa '{casa_nova}' em '{municipio_novo}'")
-            
             if not casa_nova or not casa_nova.strip():
                 st.error("❌ Por favor, digite o nome da casa!")
             else:
                 with st.spinner("Adicionando casa..."):
-                    st.write("**DEBUG:** Chamando função adicionar_casa...")
+                    sucesso, msg = adicionar_casa(
+                        client, 
+                        municipio_novo, 
+                        casa_nova.strip(), 
+                        st.session_state.nome_usuario
+                    )
                     
-                    try:
-                        sucesso, msg = adicionar_casa(
-                            client, 
-                            municipio_novo, 
-                            casa_nova.strip(), 
-                            st.session_state.nome_usuario
-                        )
-                        
-                        st.write(f"**DEBUG:** Sucesso = {sucesso}")
-                        st.write(f"**DEBUG:** Mensagem = {msg}")
-                        
-                        if sucesso:
-                            st.success(msg)
-                            st.balloons()
-                            st.info("🔄 Recarregando em 2 segundos...")
-                            import time
-                            time.sleep(2)
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                    except Exception as e:
-                        import traceback
-                        st.error(f"❌ ERRO CRÍTICO: {e}")
-                        st.code(traceback.format_exc())
+                    if sucesso:
+                        st.success(msg)
+                        st.balloons()
+                        st.info("🔄 Recarregando dados...")
+                        # Limpa o cache para forçar reload
+                        if hasattr(st.session_state, 'gs_client'):
+                            del st.session_state.gs_client
+                        st.session_state.gs_client = conectar_google_sheets()
+                        st.rerun()
+                    else:
+                        st.error(msg)
         
         # Mostra as casas já cadastradas
         st.markdown("---")
         st.subheader("📋 Casas Cadastradas")
         
-        try:
-            casas_cadastradas = carregar_casas(client)
-            
-            if casas_cadastradas:
-                for mun in MUNICIPIOS:
-                    if mun in casas_cadastradas and casas_cadastradas[mun]:
-                        with st.expander(f"📍 {mun} ({len(casas_cadastradas[mun])} casas)"):
-                            for idx, casa_nome in enumerate(casas_cadastradas[mun], 1):
-                                st.write(f"{idx}. {casa_nome}")
-            else:
-                st.info("Nenhuma casa cadastrada ainda.")
-        except Exception as e:
-            st.error(f"Erro ao carregar casas: {e}")
+        casas_cadastradas = carregar_casas(client)
+        
+        if casas_cadastradas:
+            for mun in MUNICIPIOS:
+                if mun in casas_cadastradas and casas_cadastradas[mun]:
+                    with st.expander(f"📍 {mun} ({len(casas_cadastradas[mun])} casas)"):
+                        for idx, casa_nome in enumerate(casas_cadastradas[mun], 1):
+                            st.write(f"{idx}. {casa_nome}")
+        else:
+            st.info("Nenhuma casa cadastrada ainda.")
     
     # ===== TAB 3: RELATÓRIO =====
     with tab3:
