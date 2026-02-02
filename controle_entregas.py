@@ -97,6 +97,9 @@ def conectar_google_sheets():
 
 def inicializar_planilha(client):
     """Cria as abas necessárias se não existirem"""
+    if not client:
+        return None
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         
@@ -122,6 +125,9 @@ def inicializar_planilha(client):
 
 def adicionar_casa(client, municipio, casa, usuario):
     """Adiciona uma nova casa na planilha"""
+    if not client:
+        return False, "Cliente do Google Sheets não inicializado"
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         
@@ -163,6 +169,9 @@ def adicionar_casa(client, municipio, casa, usuario):
 
 def carregar_casas(client):
     """Carrega todas as casas cadastradas"""
+    if not client:
+        return {}
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         ws_casas = sheet.worksheet("Casas")
@@ -189,6 +198,9 @@ def carregar_casas(client):
 
 def carregar_entregas(client, municipio, casa):
     """Carrega as entregas de uma casa específica"""
+    if not client:
+        return []
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         ws_entregas = sheet.worksheet("Entregas")
@@ -215,6 +227,9 @@ def carregar_entregas(client, municipio, casa):
 
 def marcar_entrega(client, linha, material, usuario):
     """Marca um material como entregue"""
+    if not client:
+        return False, "Cliente do Google Sheets não inicializado"
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         ws_entregas = sheet.worksheet("Entregas")
@@ -231,6 +246,9 @@ def marcar_entrega(client, linha, material, usuario):
 
 def desmarcar_entrega(client, linha):
     """Desmarca um material como entregue"""
+    if not client:
+        return False, "Cliente do Google Sheets não inicializado"
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         ws_entregas = sheet.worksheet("Entregas")
@@ -317,23 +335,39 @@ def tela_principal():
     
     # Conecta ao Google Sheets
     client = st.session_state.get("gs_client")
+    
+    # MUDANÇA IMPORTANTE: Mesmo se houver erro, mostra as tabs
+    erro_conexao = False
     if not client:
         st.error("❌ Erro ao conectar com Google Sheets. Verifique as credenciais no Secrets.")
-        st.info("👉 Vá em 'Manage app' → 'Settings' → 'Secrets' e configure corretamente.")
-        st.stop()
+        erro_conexao = True
     
-    # Inicializa a planilha
-    with st.spinner("Conectando à planilha..."):
-        sheet_result = inicializar_planilha(client)
-        if not sheet_result:
-            st.error("❌ Erro ao acessar a planilha. Verifique se:")
-            st.write("1. A planilha existe e a URL está correta")
-            st.write("2. O service account tem permissão de EDITOR na planilha")
-            st.write(f"3. Email do service account: `controledeentregas@disparo-452622.iam.gserviceaccount.com`")
-            st.stop()
+    # Tenta inicializar a planilha
+    sheet_result = None
+    if client:
+        with st.spinner("Conectando à planilha..."):
+            sheet_result = inicializar_planilha(client)
+            if not sheet_result:
+                st.error("❌ Erro ao acessar a planilha. Verifique as permissões.")
+                erro_conexao = True
     
-    # Tabs
+    # Tabs - SEMPRE MOSTRADAS
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
+    
+    # Se houver erro de conexão, mostra mensagem em todas as tabs
+    if erro_conexao:
+        with tab1:
+            st.warning("⚠️ Não é possível acessar os dados. Verifique a conexão com o Google Sheets.")
+            st.info("👉 Vá em 'Manage app' → 'Settings' → 'Secrets' e configure corretamente.")
+        
+        with tab2:
+            st.warning("⚠️ Não é possível adicionar casas. Verifique a conexão com o Google Sheets.")
+            st.info("👉 Vá em 'Manage app' → 'Settings' → 'Secrets' e configure corretamente.")
+        
+        with tab3:
+            st.warning("⚠️ Não é possível gerar relatórios. Verifique a conexão com o Google Sheets.")
+        
+        return
     
     # ===== TAB 1: CONTROLE DE ENTREGAS =====
     with tab1:
@@ -343,90 +377,89 @@ def tela_principal():
         
         if not casas_por_municipio:
             st.info("Nenhuma casa cadastrada ainda. Adicione casas na aba 'Adicionar Casa'.")
-            return
-        
-        # Seleção de município
-        municipio_selecionado = st.selectbox("Selecione o Município", MUNICIPIOS)
-        
-        if municipio_selecionado in casas_por_municipio:
-            casas = casas_por_municipio[municipio_selecionado]
-            
-            # Exibe cada casa
-            for casa in casas:
-                with st.expander(f"🏠 {casa}", expanded=True):
-                    entregas = carregar_entregas(client, municipio_selecionado, casa)
-                    
-                    if not entregas:
-                        st.warning("Nenhum material cadastrado para esta casa.")
-                        continue
-                    
-                    # Cabeçalho
-                    col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
-                    col1.write("**Material**")
-                    col2.write("**Status**")
-                    col3.write("**Data Entrega**")
-                    col4.write("**Confirmado Por**")
-                    
-                    st.markdown("---")
-                    
-                    # Lista de materiais
-                    for item in entregas:
-                        col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
-                        
-                        with col1:
-                            st.write(item["material"])
-                        
-                        with col2:
-                            # Checkbox para marcar/desmarcar
-                            chave = f"check_{municipio_selecionado}_{casa}_{item['linha']}"
-                            
-                            if st.checkbox(
-                                "✅" if item["entregue"] else "❌",
-                                value=item["entregue"],
-                                key=chave,
-                                label_visibility="collapsed"
-                            ):
-                                if not item["entregue"]:
-                                    # Marcar como entregue
-                                    sucesso, msg = marcar_entrega(
-                                        client, 
-                                        item["linha"], 
-                                        item["material"], 
-                                        st.session_state.nome_usuario
-                                    )
-                                    if sucesso:
-                                        st.rerun()
-                            else:
-                                if item["entregue"]:
-                                    # Desmarcar
-                                    sucesso, msg = desmarcar_entrega(client, item["linha"])
-                                    if sucesso:
-                                        st.rerun()
-                        
-                        with col3:
-                            if item["entregue"]:
-                                st.write(f"📅 {item['data_entrega']}")
-                            else:
-                                st.write("Pendente")
-                        
-                        with col4:
-                            if item["entregue"]:
-                                st.write(f"👤 {item['confirmado_por']}")
-                            else:
-                                st.write("-")
-                    
-                    # Estatísticas
-                    total = len(entregas)
-                    entregues = sum(1 for e in entregas if e["entregue"])
-                    pendentes = total - entregues
-                    
-                    st.markdown("---")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Total", total)
-                    col2.metric("Entregues", entregues)
-                    col3.metric("Pendentes", pendentes)
         else:
-            st.info(f"Nenhuma casa cadastrada em {municipio_selecionado}")
+            # Seleção de município
+            municipio_selecionado = st.selectbox("Selecione o Município", MUNICIPIOS)
+            
+            if municipio_selecionado in casas_por_municipio:
+                casas = casas_por_municipio[municipio_selecionado]
+                
+                # Exibe cada casa
+                for casa in casas:
+                    with st.expander(f"🏠 {casa}", expanded=True):
+                        entregas = carregar_entregas(client, municipio_selecionado, casa)
+                        
+                        if not entregas:
+                            st.warning("Nenhum material cadastrado para esta casa.")
+                            continue
+                        
+                        # Cabeçalho
+                        col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
+                        col1.write("**Material**")
+                        col2.write("**Status**")
+                        col3.write("**Data Entrega**")
+                        col4.write("**Confirmado Por**")
+                        
+                        st.markdown("---")
+                        
+                        # Lista de materiais
+                        for item in entregas:
+                            col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
+                            
+                            with col1:
+                                st.write(item["material"])
+                            
+                            with col2:
+                                # Checkbox para marcar/desmarcar
+                                chave = f"check_{municipio_selecionado}_{casa}_{item['linha']}"
+                                
+                                if st.checkbox(
+                                    "✅" if item["entregue"] else "❌",
+                                    value=item["entregue"],
+                                    key=chave,
+                                    label_visibility="collapsed"
+                                ):
+                                    if not item["entregue"]:
+                                        # Marcar como entregue
+                                        sucesso, msg = marcar_entrega(
+                                            client, 
+                                            item["linha"], 
+                                            item["material"], 
+                                            st.session_state.nome_usuario
+                                        )
+                                        if sucesso:
+                                            st.rerun()
+                                else:
+                                    if item["entregue"]:
+                                        # Desmarcar
+                                        sucesso, msg = desmarcar_entrega(client, item["linha"])
+                                        if sucesso:
+                                            st.rerun()
+                            
+                            with col3:
+                                if item["entregue"]:
+                                    st.write(f"📅 {item['data_entrega']}")
+                                else:
+                                    st.write("Pendente")
+                            
+                            with col4:
+                                if item["entregue"]:
+                                    st.write(f"👤 {item['confirmado_por']}")
+                                else:
+                                    st.write("-")
+                        
+                        # Estatísticas
+                        total = len(entregas)
+                        entregues = sum(1 for e in entregas if e["entregue"])
+                        pendentes = total - entregues
+                        
+                        st.markdown("---")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Total", total)
+                        col2.metric("Entregues", entregues)
+                        col3.metric("Pendentes", pendentes)
+            else:
+                st.info(f"Nenhuma casa cadastrada em {municipio_selecionado}")
     
     # ===== TAB 2: ADICIONAR CASA =====
     with tab2:
@@ -469,9 +502,7 @@ def tela_principal():
                         st.balloons()
                         st.info("🔄 Recarregando dados...")
                         # Limpa o cache para forçar reload
-                        if hasattr(st.session_state, 'gs_client'):
-                            del st.session_state.gs_client
-                        st.session_state.gs_client = conectar_google_sheets()
+                        st.cache_resource.clear()
                         st.rerun()
                     else:
                         st.error(msg)
