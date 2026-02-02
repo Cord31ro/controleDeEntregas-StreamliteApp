@@ -1,0 +1,128 @@
+# 🔧 Guia Rápido: Adicionar/Remover Materiais
+
+## 📍 Onde editar
+
+Abra o arquivo `controle_entregas.py` e procure por esta seção no início do código:
+
+```python
+# ==========================================
+# 🔧 CONFIGURAÇÃO DE MATERIAIS
+# ==========================================
+MATERIAIS_PADRAO = [
+    {"nome": "Tijolo", "quantidade_padrao": "1000 un"},
+    {"nome": "Brita", "quantidade_padrao": "5 m³"},
+    # ... mais materiais ...
+]
+```
+
+## ➕ Como ADICIONAR um material
+
+Copie e cole uma nova linha seguindo o padrão:
+
+```python
+MATERIAIS_PADRAO = [
+    {"nome": "Tijolo", "quantidade_padrao": "1000 un"},
+    {"nome": "Brita", "quantidade_padrao": "5 m³"},
+    {"nome": "SEU NOVO MATERIAL", "quantidade_padrao": "QUANTIDADE"},  # <- Nova linha
+]
+```
+
+### Exemplos:
+
+```python
+# Adicionar Cal
+{"nome": "Cal", "quantidade_padrao": "30 sacos"},
+
+# Adicionar Telha
+{"nome": "Telha Colonial", "quantidade_padrao": "500 un"},
+
+# Adicionar sem quantidade padrão
+{"nome": "Janelas", "quantidade_padrao": ""},
+```
+
+## ❌ Como REMOVER um material
+
+Simplesmente delete a linha inteira ou comente com #:
+
+```python
+MATERIAIS_PADRAO = [
+    {"nome": "Tijolo", "quantidade_padrao": "1000 un"},
+    # {"nome": "Brita", "quantidade_padrao": "5 m³"},  <- Comentado (não será usado)
+    {"nome": "Areia", "quantidade_padrao": "5 m³"},
+]
+```
+
+## ✏️ Como EDITAR quantidade padrão
+
+Mude o valor dentro das aspas:
+
+```python
+# ANTES
+{"nome": "Cimento", "quantidade_padrao": "50 sacos"},
+
+# DEPOIS
+{"nome": "Cimento", "quantidade_padrao": "100 sacos"},
+```
+
+## ⚠️ Regras Importantes
+
+1. **Sempre use vírgula** entre os itens (exceto no último)
+2. **Use aspas duplas** `"` ao invés de aspas simples `'`
+3. **Mantenha as chaves** `{` e `}`
+4. **Mantenha os colchetes** `[` e `]`
+
+## ✅ Exemplo Completo
+
+```python
+MATERIAIS_PADRAO = [
+    # Materiais de Fundação
+    {"nome": "Tijolo", "quantidade_padrao": "1000 un"},
+    {"nome": "Brita", "quantidade_padrao": "5 m³"},
+    {"nome": "Areia", "quantidade_padrao": "5 m³"},
+    {"nome": "Cimento", "quantidade_padrao": "50 sacos"},
+    
+    # Materiais Elétricos
+    {"nome": "Fio 2,5mm", "quantidade_padrao": "2 rolos"},
+    {"nome": "Fio 4mm", "quantidade_padrao": "1 rolo"},
+    {"nome": "Disjuntor 20A", "quantidade_padrao": "5 un"},
+    
+    # Materiais Hidráulicos
+    {"nome": "Tubo PVC 100mm", "quantidade_padrao": "20 metros"},
+    {"nome": "Tubo PVC 50mm", "quantidade_padrao": "30 metros"},
+    {"nome": "Registro 3/4", "quantidade_padrao": "8 un"},
+    
+    # Acabamento
+    {"nome": "Piso Cerâmica", "quantidade_padrao": "80 m²"},
+    {"nome": "Tinta Branca", "quantidade_padrao": "20 galões"},
+    {"nome": "Portas", "quantidade_padrao": "6 un"},
+]
+```
+
+## 🚀 Depois de editar
+
+1. Salve o arquivo
+2. Reinicie o aplicativo Streamlit
+3. As novas casas criadas já terão os materiais atualizados
+4. **Casas antigas não são afetadas automaticamente**
+
+## 💡 Dica
+
+Se você já tem casas cadastradas e quer atualizar os materiais delas:
+1. Exporte os dados (sincronize com Google Sheets)
+2. Delete as casas antigas
+3. Adicione as casas novamente
+4. Sincronize de volta se necessário
+
+## ❓ Testando suas alterações
+
+Após editar, você pode conferir quantos materiais estão configurados olhando o rodapé da sidebar:
+
+```
+📦 Total de materiais no checklist: 15
+```
+
+Se aparecer um erro, verifique:
+- ✅ Todas as vírgulas estão no lugar?
+- ✅ Todas as aspas estão fechadas?
+- ✅ Todas as chaves `{}` estão balanceadas?
+- ✅ Os colchetes `[]` estão balanceados?

@@ -3,6 +3,7 @@
 *credentials.json
 *.json
 !requirements.json
+service-account.json
 
 # Dados locais
 entregas_obra.json
