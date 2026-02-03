@@ -114,7 +114,7 @@ def inicializar_planilha(client):
         except:
             ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
             ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
-            time.sleep(1)  # Espera 1 segundo entre operações
+            time.sleep(1)
         
         # Verifica/Cria aba de Entregas
         try:
@@ -141,17 +141,16 @@ def carregar_todos_dados(client):
     agora = time.time()
     if "ultimo_carregamento" in st.session_state:
         tempo_decorrido = agora - st.session_state.ultimo_carregamento
-        if tempo_decorrido < 30:  # Se carregou há menos de 30 segundos
+        if tempo_decorrido < 30:
             return st.session_state.dados_casas, st.session_state.dados_entregas
     
     try:
         sheet = client.open_by_url(SHEET_URL)
         
-        # UMA ÚNICA LEITURA para cada aba
         ws_casas = sheet.worksheet("Casas")
         dados_casas = ws_casas.get_all_values()
         
-        time.sleep(1)  # Pequena pausa entre leituras
+        time.sleep(1)
         
         ws_entregas = sheet.worksheet("Entregas")
         dados_entregas = ws_entregas.get_all_values()
@@ -435,31 +434,38 @@ def tela_principal():
                                 st.write(item["material"])
                             
                             with col2:
-                                # Checkbox para marcar/desmarcar
-                                chave = f"check_{municipio_selecionado}_{casa}_{item['linha']}"
-                                
-                                if st.checkbox(
-                                    "✅" if item["entregue"] else "❌",
-                                    value=item["entregue"],
-                                    key=chave,
-                                    label_visibility="collapsed"
-                                ):
-                                    if not item["entregue"]:
-                                        # Marcar como entregue
+                                # Usa botão ao invés de checkbox para evitar dessync de estado
+                                if item["entregue"]:
+                                    # Já está entregue → botão para DESMARCAR
+                                    if st.button(
+                                        "✅ Entregue",
+                                        key=f"btn_{municipio_selecionado}_{casa}_{item['linha']}",
+                                        type="primary",
+                                        use_container_width=True
+                                    ):
+                                        sucesso, msg = desmarcar_entrega(client, item["linha"])
+                                        if sucesso:
+                                            st.rerun()
+                                        else:
+                                            st.error(msg)
+                                else:
+                                    # Ainda não entregue → botão para MARCAR
+                                    if st.button(
+                                        "❌ Pendente",
+                                        key=f"btn_{municipio_selecionado}_{casa}_{item['linha']}",
+                                        type="secondary",
+                                        use_container_width=True
+                                    ):
                                         sucesso, msg = marcar_entrega(
-                                            client, 
-                                            item["linha"], 
-                                            item["material"], 
+                                            client,
+                                            item["linha"],
+                                            item["material"],
                                             st.session_state.nome_usuario
                                         )
                                         if sucesso:
                                             st.rerun()
-                                else:
-                                    if item["entregue"]:
-                                        # Desmarcar
-                                        sucesso, msg = desmarcar_entrega(client, item["linha"])
-                                        if sucesso:
-                                            st.rerun()
+                                        else:
+                                            st.error(msg)
                             
                             with col3:
                                 if item["entregue"]:
@@ -512,7 +518,7 @@ def tela_principal():
         
         if adicionar:
             if not casa_nova or not casa_nova.strip():
-                st.error("❌ Por favor, digite o nome da casa!")
+                st.error("❌ Por favor, dixon o nome da casa!")
             else:
                 with st.spinner("Adicionando casa..."):
                     sucesso, msg = adicionar_casa(
