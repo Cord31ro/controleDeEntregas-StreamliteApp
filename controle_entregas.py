@@ -80,7 +80,6 @@ def conectar_google_sheets():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # Corrige a private_key se necessário
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
@@ -101,14 +100,12 @@ def inicializar_planilha(client):
     if not client:
         return None
     
-    # Verifica se já foi inicializado nesta sessão
     if "planilha_inicializada" in st.session_state:
         return st.session_state.planilha_inicializada
         
     try:
         sheet = client.open_by_url(SHEET_URL)
         
-        # Verifica/Cria aba de Casas
         try:
             ws_casas = sheet.worksheet("Casas")
         except:
@@ -116,7 +113,6 @@ def inicializar_planilha(client):
             ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
             time.sleep(1)
         
-        # Verifica/Cria aba de Entregas
         try:
             ws_entregas = sheet.worksheet("Entregas")
         except:
@@ -124,7 +120,6 @@ def inicializar_planilha(client):
             ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
             time.sleep(1)
         
-        # Salva no session_state para não precisar verificar novamente
         st.session_state.planilha_inicializada = sheet
         return sheet
     except Exception as e:
@@ -132,12 +127,18 @@ def inicializar_planilha(client):
         return None
 
 
+def limpar_cache_dados():
+    """Limpa TODO o cache de dados para forçar recarga completa"""
+    for chave in ["ultimo_carregamento", "dados_casas", "dados_entregas"]:
+        if chave in st.session_state:
+            del st.session_state[chave]
+
+
 def carregar_todos_dados(client):
     """Carrega TODOS os dados de uma vez só - OTIMIZADO"""
     if not client:
         return None, None
     
-    # Verifica se já carregou recentemente (cache de 30 segundos)
     agora = time.time()
     if "ultimo_carregamento" in st.session_state:
         tempo_decorrido = agora - st.session_state.ultimo_carregamento
@@ -155,12 +156,19 @@ def carregar_todos_dados(client):
         ws_entregas = sheet.worksheet("Entregas")
         dados_entregas = ws_entregas.get_all_values()
         
-        # Salva no cache
+        # CORRIGIDO: Preenche cada linha até 6 colunas para evitar
+        # que linhas com colunas vazias sejam ignoradas
+        dados_entregas_padronizados = []
+        for linha in dados_entregas:
+            while len(linha) < 6:
+                linha.append("")
+            dados_entregas_padronizados.append(linha)
+        
         st.session_state.dados_casas = dados_casas
-        st.session_state.dados_entregas = dados_entregas
+        st.session_state.dados_entregas = dados_entregas_padronizados
         st.session_state.ultimo_carregamento = agora
         
-        return dados_casas, dados_entregas
+        return dados_casas, dados_entregas_padronizados
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}")
         return None, None
@@ -172,7 +180,7 @@ def processar_casas(dados_casas):
         return {}
     
     casas_por_municipio = {}
-    for linha in dados_casas[1:]:  # Pula cabeçalho
+    for linha in dados_casas[1:]:
         if len(linha) >= 2:
             municipio = linha[0]
             casa = linha[1]
@@ -192,16 +200,19 @@ def processar_entregas(dados_entregas, municipio, casa):
         return []
     
     entregas = []
-    for i, linha in enumerate(dados_entregas[1:], start=2):  # Pula cabeçalho, começa da linha 2
-        if len(linha) >= 6:
-            if linha[0] == municipio and linha[1] == casa:
-                entregas.append({
-                    "linha": i,
-                    "material": linha[2],
-                    "entregue": linha[3] == "Sim",
-                    "data_entrega": linha[4],
-                    "confirmado_por": linha[5]
-                })
+    for i, linha in enumerate(dados_entregas[1:], start=2):
+        # Garante 6 colunas por segurança
+        while len(linha) < 6:
+            linha.append("")
+        
+        if linha[0] == municipio and linha[1] == casa and linha[2] != "":
+            entregas.append({
+                "linha": i,
+                "material": linha[2],
+                "entregue": linha[3].strip().lower() == "sim",
+                "data_entrega": linha[4],
+                "confirmado_por": linha[5]
+            })
     
     return entregas
 
@@ -216,7 +227,6 @@ def adicionar_casa(client, municipio, casa, usuario):
         ws_casas = sheet.worksheet("Casas")
         ws_entregas = sheet.worksheet("Entregas")
         
-        # Verifica se a casa já existe nos dados em cache
         dados_casas = st.session_state.get("dados_casas", [])
         if len(dados_casas) > 1:
             for linha in dados_casas[1:]:
@@ -224,22 +234,17 @@ def adicionar_casa(client, municipio, casa, usuario):
                     if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
                         return False, "Casa já cadastrada neste município!"
         
-        # Adiciona a casa
         data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
         time.sleep(1)
         
-        # Adiciona os materiais padrão para esta casa
         linhas_materiais = []
         for material in MATERIAIS_PADRAO:
             linhas_materiais.append([municipio, casa, material, "Não", "", ""])
         
-        # Adiciona todos os materiais de uma vez
         ws_entregas.append_rows(linhas_materiais)
         
-        # Limpa o cache para forçar recarga
-        if "ultimo_carregamento" in st.session_state:
-            del st.session_state.ultimo_carregamento
+        limpar_cache_dados()
         
         return True, f"✅ Casa '{casa}' adicionada com sucesso em {municipio}!"
     except Exception as e:
@@ -260,9 +265,7 @@ def marcar_entrega(client, linha, material, usuario):
         data_entrega = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         ws_entregas.update(f'D{linha}:F{linha}', [["Sim", data_entrega, usuario]])
         
-        # Limpa o cache
-        if "ultimo_carregamento" in st.session_state:
-            del st.session_state.ultimo_carregamento
+        limpar_cache_dados()
         
         return True, "Entrega confirmada!"
     except Exception as e:
@@ -280,9 +283,7 @@ def desmarcar_entrega(client, linha):
         
         ws_entregas.update(f'D{linha}:F{linha}', [["Não", "", ""]])
         
-        # Limpa o cache
-        if "ultimo_carregamento" in st.session_state:
-            del st.session_state.ultimo_carregamento
+        limpar_cache_dados()
         
         return True, "Entrega desmarcada!"
     except Exception as e:
@@ -361,7 +362,6 @@ def tela_principal():
     
     st.markdown("---")
     
-    # Conecta ao Google Sheets
     client = st.session_state.get("gs_client")
     
     if not client:
@@ -369,13 +369,11 @@ def tela_principal():
         st.info("👉 Verifique as credenciais em Settings → Secrets")
         return
     
-    # Inicializa a planilha (só uma vez)
     sheet_result = inicializar_planilha(client)
     if not sheet_result:
         st.error("❌ Erro ao acessar a planilha.")
         return
     
-    # CARREGA TODOS OS DADOS UMA ÚNICA VEZ
     with st.spinner("Carregando dados..."):
         dados_casas, dados_entregas = carregar_todos_dados(client)
     
@@ -383,16 +381,12 @@ def tela_principal():
         st.error("❌ Erro ao carregar dados da planilha.")
         return
     
-    # Processa os dados
     casas_por_municipio = processar_casas(dados_casas)
     
-    # Botão para recarregar manualmente
     if st.button("🔄 Recarregar Dados"):
-        if "ultimo_carregamento" in st.session_state:
-            del st.session_state.ultimo_carregamento
+        limpar_cache_dados()
         st.rerun()
     
-    # Tabs
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
     
     # ===== TAB 1: CONTROLE DE ENTREGAS =====
@@ -402,60 +396,69 @@ def tela_principal():
         if not casas_por_municipio:
             st.info("Nenhuma casa cadastrada ainda. Adicione casas na aba 'Adicionar Casa'.")
         else:
-            # Seleção de município
             municipio_selecionado = st.selectbox("Selecione o Município", MUNICIPIOS)
             
             if municipio_selecionado in casas_por_municipio:
                 casas = casas_por_municipio[municipio_selecionado]
                 
-                # Exibe cada casa
                 for casa in casas:
-                    with st.expander(f"🏠 {casa}", expanded=False):
-                        entregas = processar_entregas(dados_entregas, municipio_selecionado, casa)
+                    entregas = processar_entregas(dados_entregas, municipio_selecionado, casa)
+                    
+                    total = len(entregas)
+                    entregues = sum(1 for e in entregas if e["entregue"])
+                    
+                    # Mantém expander aberto após rerun usando session_state
+                    chave_expander = f"expander_{municipio_selecionado}_{casa}"
+                    expanded_default = st.session_state.get(chave_expander, False)
+                    
+                    titulo_expander = f"🏠 {casa}  |  ✅ {entregues}/{total} entregues"
+                    
+                    with st.expander(titulo_expander, expanded=expanded_default):
+                        st.session_state[chave_expander] = True
                         
                         if not entregas:
                             st.warning("Nenhum material cadastrado para esta casa.")
                             continue
                         
-                        # Cabeçalho
-                        col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
+                        col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
                         col1.write("**Material**")
                         col2.write("**Status**")
                         col3.write("**Data Entrega**")
                         col4.write("**Confirmado Por**")
-                        
                         st.markdown("---")
                         
-                        # Lista de materiais
                         for item in entregas:
-                            col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
+                            col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
                             
                             with col1:
                                 st.write(item["material"])
                             
                             with col2:
-                                # Usa botão ao invés de checkbox para evitar dessync de estado
+                                btn_key = f"btn_{municipio_selecionado}_{casa}_{item['linha']}"
+                                
                                 if item["entregue"]:
-                                    # Já está entregue → botão para DESMARCAR
-                                    if st.button(
+                                    clicked = st.button(
                                         "✅ Entregue",
-                                        key=f"btn_{municipio_selecionado}_{casa}_{item['linha']}",
+                                        key=btn_key,
                                         type="primary",
                                         use_container_width=True
-                                    ):
+                                    )
+                                    if clicked:
+                                        st.session_state[chave_expander] = True
                                         sucesso, msg = desmarcar_entrega(client, item["linha"])
                                         if sucesso:
                                             st.rerun()
                                         else:
                                             st.error(msg)
                                 else:
-                                    # Ainda não entregue → botão para MARCAR
-                                    if st.button(
+                                    clicked = st.button(
                                         "❌ Pendente",
-                                        key=f"btn_{municipio_selecionado}_{casa}_{item['linha']}",
+                                        key=btn_key,
                                         type="secondary",
                                         use_container_width=True
-                                    ):
+                                    )
+                                    if clicked:
+                                        st.session_state[chave_expander] = True
                                         sucesso, msg = marcar_entrega(
                                             client,
                                             item["linha"],
@@ -471,19 +474,15 @@ def tela_principal():
                                 if item["entregue"]:
                                     st.write(f"📅 {item['data_entrega']}")
                                 else:
-                                    st.write("Pendente")
+                                    st.write("—")
                             
                             with col4:
                                 if item["entregue"]:
                                     st.write(f"👤 {item['confirmado_por']}")
                                 else:
-                                    st.write("-")
+                                    st.write("—")
                         
-                        # Estatísticas
-                        total = len(entregas)
-                        entregues = sum(1 for e in entregas if e["entregue"])
                         pendentes = total - entregues
-                        
                         st.markdown("---")
                         col1, col2, col3 = st.columns(3)
                         col1.metric("Total", total)
@@ -518,7 +517,7 @@ def tela_principal():
         
         if adicionar:
             if not casa_nova or not casa_nova.strip():
-                st.error("❌ Por favor, dixon o nome da casa!")
+                st.error("❌ Por favor, informe o nome da casa!")
             else:
                 with st.spinner("Adicionando casa..."):
                     sucesso, msg = adicionar_casa(
@@ -536,7 +535,6 @@ def tela_principal():
                     else:
                         st.error(msg)
         
-        # Mostra as casas já cadastradas
         st.markdown("---")
         st.subheader("📋 Casas Cadastradas")
         
@@ -557,7 +555,6 @@ def tela_principal():
             st.info("Nenhum dado disponível.")
             return
         
-        # Dados para o relatório
         dados_relatorio = []
         
         for municipio in MUNICIPIOS:
@@ -583,7 +580,6 @@ def tela_principal():
             df = pd.DataFrame(dados_relatorio)
             st.dataframe(df, use_container_width=True, hide_index=True)
             
-            # Resumo geral
             st.markdown("---")
             st.subheader("📈 Resumo Geral")
             
@@ -606,14 +602,12 @@ def tela_principal():
 # =====================================================
 
 def main():
-    # Inicializa session_state
     if "usuario" not in st.session_state:
         st.session_state.usuario = None
     
     if "gs_client" not in st.session_state:
         st.session_state.gs_client = conectar_google_sheets()
     
-    # Verifica login
     if st.session_state.usuario is None:
         tela_login()
     else:
