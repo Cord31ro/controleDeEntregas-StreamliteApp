@@ -34,13 +34,159 @@ MUNICIPIOS = [
 ]
 
 MATERIAIS_PADRAO = [
-    "Tijolo (1000 un)",
-    "Brita (5 m³)",
-    "Areia (5 m³)",
-    "Cimento (50 sacos)",
-    "Cal (20 sacos)",
-    "Ferro 8mm (50 barras)",
-    "Ferro 10mm (50 barras)",
+    # 🧱 ALVENARIA
+    "Pedra brita 19",
+    "Pedra rocha fundação",
+    "Areia média",
+    "Cimento composto CP II",
+    "Aço vergalhão 10mm",
+    "Aço vergalhão 5,2mm",
+    "Arame recozido",
+    "Tijolo cerâmico",
+    "Trilho para laje",
+    "Tábuas 0,30 x 3m",
+    "Tábuas 0,10 x 3m",
+    "Lajotas",
+    
+    # 🏠 TELHADO
+    "Telha cerâmica",
+    "Linha 3/5 – 7,5m",
+    "Linha 3/5 – 4m",
+    "Linha 3/5 – 5m",
+    "Linha 3/5 – 2m",
+    "Barrote de 3m",
+    "Barrote 4,5m",
+    "Caibros 5,5m",
+    "Ripas",
+    "Canaletas grandes",
+    "Canaletas pequenas",
+    "Sapata",
+    
+    # 🪟 ESQUADRIAS / ACABAMENTO
+    "Janela 1x1,20",
+    "Janela 1,00x1",
+    "Janela 50x50",
+    "Porta semi-oca",
+    "Porta almofadada",
+    "Coluna 5/16 – 3m",
+    "Cerâmica piso",
+    "Cerâmica parede",
+    "Argamassa 15kg",
+    "Rejunte",
+    "Forra de porta (pct)",
+    "Dobradiças p/ janela",
+    "Dobradiças p/ portas",
+    "Ferrolho redondo",
+    "Parafusos p/ janela, porta e ferragem",
+    "Pivoltante",
+    "Caixa d'água 500L",
+    "Caixa d'água 1000L",
+    
+    # 🚿 BANHEIRO / PINTURA
+    "Kit banheiro",
+    "Fechadura externa",
+    "Fechadura interna",
+    "Fechadura banheiro",
+    "Lixa 120",
+    "Verniz 3L",
+    "Tinta esmalte sintético 15L",
+    "Selador 18L",
+    "Cal para pintura",
+    "Rolo para pintura 23cm",
+    "Rolo para pintura 9cm",
+    "Brocha para pintura",
+    "Pincel 1 1/2 polegadas",
+    
+    # ⚡ ELÉTRICA
+    "Quadro distribuição 6 disjuntores",
+    "Quadro de luz completo",
+    "Pontalete energia",
+    "Eletroduto PVC corrugado",
+    "Lâmpada",
+    "Interruptor de 2 sessões",
+    "Interruptor de 1 sessão",
+    "Tomadas 10A",
+    "Tomadas 20A",
+    "Fita isolante",
+    "Fio 4mm 750V",
+    "Fio 2,5mm",
+    "Fio 1,5mm",
+    "Disjuntor 16 amperes",
+    "Disjuntor 10 amperes",
+    "Disjuntor 25 amperes",
+    "Disjuntor 32 amperes",
+    "Disjuntor 40 amperes DR",
+    "Bocal de lâmpadas",
+    "Plafon",
+    "Cano eletroduto",
+    "Capacete para eletrodutos",
+    "Haste para aterramento",
+    "Cone para aterramento",
+    "Curva eletroduto 3/4",
+    "Tomada da internet",
+    "Tomada para TV",
+    "Caixa PVC 4x2",
+    "Fixa fio (pct)",
+    "Conector para haste",
+    
+    # 🚰 HIDRÁULICA
+    "Joelho PVC 25mm",
+    "Joelho redução 25x1/2\"",
+    "Tê 25mm",
+    "Registro gaveta cromado",
+    "Registro pressão",
+    "Adaptador curto SR 25mm x 3/4\"",
+    "Joelho 40mm 90°",
+    "Joelho 45° 50mm esgoto série normal",
+    "Joelho 90° 50mm esgoto série normal",
+    "Luva PVC SR 25mm x 3/4\" rosca externa",
+    "Tê 100x50mm",
+    "Tubo PVC 25mm 6m",
+    "Tubo PVC esgoto 100mm 6m",
+    "Tubo PVC esgoto 75mm 6m",
+    "Tubo PVC esgoto 50mm 6m",
+    "Tubo PVC esgoto 40mm 6m",
+    "Tubo PVC água 40mm 1,5m",
+    "Ralo sifonado",
+    "Tê 40mm",
+    "Tê 50mm",
+    "Y esgoto 100x50mm",
+    "Joelho esgoto 50mm 45°",
+    "Joelho esgoto 50mm",
+    "Joelho esgoto 40mm",
+    "Joelho esgoto 40mm 45°",
+    "Joelho esgoto 100mm",
+    "Cola de cano 175g",
+    "Sifão sifonado",
+    "Torneira p/ lavatório",
+    "Torneira p/ lavanderia",
+    "Torneira p/ pia de cozinha",
+    "Calha de PVC",
+    "Terminal PVC",
+    "Tampa PVC",
+    "Emenda PVC para bica",
+    "Suporte para bica",
+    "Parafusos para suporte da bica",
+    "Vedanel",
+    "Flange 40mm",
+    "Flange 25mm",
+    "Válvula para lavatório",
+    "Válvula para pia inox",
+    "Chicote flexível 40cm",
+    "Tanque p/ lavar roupa",
+    "Cantoneira 40cm",
+    "Parafuso com bucha 10mm",
+    "Parafuso para tanque",
+    "Pia de banheiro",
+    "Arame da cisterna",
+    "Vaso acoplado",
+    "Veda rosca",
+    
+    # 🚿 ACESSIBILIDADE
+    "Parafuso p/ vaso sanitário",
+    "Chuveiro com cano",
+    "Barra de apoio 70cm",
+    "Cadeira para banho",
 ]
 
 # =====================================================
@@ -116,7 +262,7 @@ def inicializar_planilha(client):
         try:
             ws_entregas = sheet.worksheet("Entregas")
         except:
-            ws_entregas = sheet.add_worksheet(title="Entregas", rows=5000, cols=10)
+            ws_entregas = sheet.add_worksheet(title="Entregas", rows=10000, cols=10)
             ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
             time.sleep(1)
         
@@ -156,8 +302,6 @@ def carregar_todos_dados(client):
         ws_entregas = sheet.worksheet("Entregas")
         dados_entregas = ws_entregas.get_all_values()
         
-        # CORRIGIDO: Preenche cada linha até 6 colunas para evitar
-        # que linhas com colunas vazias sejam ignoradas
         dados_entregas_padronizados = []
         for linha in dados_entregas:
             while len(linha) < 6:
@@ -201,7 +345,6 @@ def processar_entregas(dados_entregas, municipio, casa):
     
     entregas = []
     for i, linha in enumerate(dados_entregas[1:], start=2):
-        # Garante 6 colunas por segurança
         while len(linha) < 6:
             linha.append("")
         
@@ -238,19 +381,23 @@ def adicionar_casa(client, municipio, casa, usuario):
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
         time.sleep(1)
         
-        linhas_materiais = []
-        for material in MATERIAIS_PADRAO:
-            linhas_materiais.append([municipio, casa, material, "Não", "", ""])
-        
-        ws_entregas.append_rows(linhas_materiais)
+        # Adiciona materiais em lotes de 50 para evitar timeout
+        lote_size = 50
+        for i in range(0, len(MATERIAIS_PADRAO), lote_size):
+            lote = MATERIAIS_PADRAO[i:i+lote_size]
+            linhas_materiais = []
+            for material in lote:
+                linhas_materiais.append([municipio, casa, material, "Não", "", ""])
+            ws_entregas.append_rows(linhas_materiais)
+            time.sleep(1)
         
         limpar_cache_dados()
         
-        return True, f"✅ Casa '{casa}' adicionada com sucesso em {municipio}!"
+        return True, f"✅ Casa '{casa}' adicionada com {len(MATERIAIS_PADRAO)} materiais!"
     except Exception as e:
         import traceback
         erro_completo = traceback.format_exc()
-        return False, f"Erro ao adicionar casa: {str(e)}\n\nDetalhes: {erro_completo}"
+        return False, f"Erro: {str(e)}"
 
 
 def marcar_entrega(client, linha, material, usuario):
@@ -407,7 +554,6 @@ def tela_principal():
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
                     
-                    # Mantém expander aberto após rerun usando session_state
                     chave_expander = f"expander_{municipio_selecionado}_{casa}"
                     expanded_default = st.session_state.get(chave_expander, False)
                     
@@ -495,7 +641,7 @@ def tela_principal():
     with tab2:
         st.subheader("➕ Adicionar Nova Casa")
         
-        st.info("💡 Preencha os dados abaixo para cadastrar uma nova casa e seus materiais")
+        st.info(f"💡 Ao adicionar uma casa, {len(MATERIAIS_PADRAO)} materiais serão cadastrados automaticamente")
         
         col1, col2 = st.columns(2)
         
@@ -507,19 +653,11 @@ def tela_principal():
         
         st.markdown("---")
         
-        col1, col2 = st.columns([1, 3])
-        
-        with col1:
-            adicionar = st.button("➕ Adicionar Casa", use_container_width=True, type="primary")
-        
-        with col2:
-            st.caption("Ao adicionar, serão criados automaticamente os registros de todos os materiais padrão para esta casa.")
-        
-        if adicionar:
+        if st.button("➕ Adicionar Casa", use_container_width=True, type="primary"):
             if not casa_nova or not casa_nova.strip():
                 st.error("❌ Por favor, informe o nome da casa!")
             else:
-                with st.spinner("Adicionando casa..."):
+                with st.spinner(f"Adicionando casa com {len(MATERIAIS_PADRAO)} materiais... Aguarde..."):
                     sucesso, msg = adicionar_casa(
                         client, 
                         municipio_novo, 
