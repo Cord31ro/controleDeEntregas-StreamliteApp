@@ -197,22 +197,26 @@ USUARIOS = {
     "gutemberg": {
         "nome": "Gutemberg Martins",
         "pin": "0000",
-        "admin": True
+        "admin": True,
+        "pode_desmarcar": True
     },
     "severino": {
         "nome": "Severino Cordeiro",
         "pin": "0101",
-        "admin": False
+        "admin": False,
+        "pode_desmarcar": False
     },
     "virgilho": {
         "nome": "Virgilho Cordeiro",
         "pin": "0209",
-        "admin": False
+        "admin": False,
+        "pode_desmarcar": False
     },
     "gutemberg_filho": {
         "nome": "Gutemberg Filho",
         "pin": "2004",
-        "admin": False
+        "admin": False,
+        "pode_desmarcar": True
     },
 }
 
@@ -481,6 +485,7 @@ def tela_login():
                 st.session_state.usuario = username
                 st.session_state.nome_usuario = USUARIOS[username]["nome"]
                 st.session_state.is_admin = USUARIOS[username]["admin"]
+                st.session_state.pode_desmarcar = USUARIOS[username]["pode_desmarcar"]
                 st.success(f"Bem-vindo, {USUARIOS[username]['nome']}!")
                 st.rerun()
             else:
@@ -583,19 +588,30 @@ def tela_principal():
                                 btn_key = f"btn_{municipio_selecionado}_{casa}_{item['linha']}"
                                 
                                 if item["entregue"]:
-                                    clicked = st.button(
-                                        "✅ Entregue",
-                                        key=btn_key,
-                                        type="primary",
-                                        use_container_width=True
-                                    )
-                                    if clicked:
-                                        st.session_state[chave_expander] = True
-                                        sucesso, msg = desmarcar_entrega(client, item["linha"])
-                                        if sucesso:
-                                            st.rerun()
-                                        else:
-                                            st.error(msg)
+                                    # Se usuário PODE desmarcar
+                                    if st.session_state.get("pode_desmarcar", False):
+                                        clicked = st.button(
+                                            "✅ Entregue",
+                                            key=btn_key,
+                                            type="primary",
+                                            use_container_width=True
+                                        )
+                                        if clicked:
+                                            st.session_state[chave_expander] = True
+                                            sucesso, msg = desmarcar_entrega(client, item["linha"])
+                                            if sucesso:
+                                                st.rerun()
+                                            else:
+                                                st.error(msg)
+                                    else:
+                                        # Usuário NÃO pode desmarcar - botão desabilitado
+                                        st.button(
+                                            "✅ Entregue",
+                                            key=btn_key,
+                                            type="primary",
+                                            use_container_width=True,
+                                            disabled=True
+                                        )
                                 else:
                                     clicked = st.button(
                                         "❌ Pendente",
