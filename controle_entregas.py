@@ -385,22 +385,33 @@ def adicionar_casa(client, municipio, casa, usuario):
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
         time.sleep(1)
         
-        # Adiciona materiais em lotes de 50 para evitar timeout
-        lote_size = 50
-        for i in range(0, len(MATERIAIS_PADRAO), lote_size):
-            lote = MATERIAIS_PADRAO[i:i+lote_size]
-            linhas_materiais = []
-            for material in lote:
-                linhas_materiais.append([municipio, casa, material, "Não", "", ""])
-            ws_entregas.append_rows(linhas_materiais)
-            time.sleep(1)
+        st.info(f"📝 Casa registrada. Adicionando {len(MATERIAIS_PADRAO)} materiais (isso vai demorar ~2 minutos)...")
         
+        # Adiciona UM POR UM para garantir
+        barra_progresso = st.progress(0)
+        for idx, material in enumerate(MATERIAIS_PADRAO):
+            try:
+                ws_entregas.append_row([municipio, casa, material, "Não", "", ""])
+                
+                # Atualiza progresso a cada 10 materiais
+                if (idx + 1) % 10 == 0:
+                    barra_progresso.progress((idx + 1) / len(MATERIAIS_PADRAO))
+                    st.write(f"✓ {idx + 1}/{len(MATERIAIS_PADRAO)} materiais")
+                
+                # Pausa mínima entre requisições
+                time.sleep(0.5)
+            except Exception as e:
+                st.error(f"Erro no material '{material}': {e}")
+                continue
+        
+        barra_progresso.progress(1.0)
         limpar_cache_dados()
         
-        return True, f"✅ Casa '{casa}' adicionada com {len(MATERIAIS_PADRAO)} materiais!"
+        return True, f"✅ Casa '{casa}' + {len(MATERIAIS_PADRAO)} materiais salvos!"
     except Exception as e:
         import traceback
         erro_completo = traceback.format_exc()
+        st.error(f"❌ ERRO: {erro_completo}")
         return False, f"Erro: {str(e)}"
 
 
