@@ -568,7 +568,8 @@ def tela_principal():
                         st.session_state[chave_expander] = True
                         
                         if not entregas:
-                            st.warning("Nenhum material cadastrado para esta casa.")
+                            st.warning("⚠️ Nenhum material cadastrado para esta casa.")
+                            st.info("💡 Pode levar alguns segundos para os materiais aparecerem após adicionar a casa. Clique em '🔄 Recarregar Dados'")
                             continue
                         
                         col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
@@ -684,7 +685,10 @@ def tela_principal():
                     if sucesso:
                         st.success(msg)
                         st.balloons()
-                        time.sleep(2)
+                        st.info("⏳ Aguarde 5 segundos para garantir que os dados foram salvos...")
+                        time.sleep(5)
+                        # Limpa TUDO do cache para forçar reload
+                        limpar_cache_dados()
                         st.rerun()
                     else:
                         st.error(msg)
