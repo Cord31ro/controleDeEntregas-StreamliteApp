@@ -281,15 +281,9 @@ def limpar_cache_dados():
 
 
 def carregar_todos_dados(client):
-    """Carrega TODOS os dados de uma vez só - OTIMIZADO"""
+    """Carrega TODOS os dados de uma vez só"""
     if not client:
         return None, None
-    
-    agora = time.time()
-    if "ultimo_carregamento" in st.session_state:
-        tempo_decorrido = agora - st.session_state.ultimo_carregamento
-        if tempo_decorrido < 30:
-            return st.session_state.dados_casas, st.session_state.dados_entregas
     
     try:
         sheet = client.open_by_url(SHEET_URL)
@@ -307,10 +301,6 @@ def carregar_todos_dados(client):
             while len(linha) < 6:
                 linha.append("")
             dados_entregas_padronizados.append(linha)
-        
-        st.session_state.dados_casas = dados_casas
-        st.session_state.dados_entregas = dados_entregas_padronizados
-        st.session_state.ultimo_carregamento = agora
         
         return dados_casas, dados_entregas_padronizados
     except Exception as e:
@@ -370,9 +360,10 @@ def adicionar_casa(client, municipio, casa, usuario):
         ws_casas = sheet.worksheet("Casas")
         ws_entregas = sheet.worksheet("Entregas")
         
-        dados_casas = st.session_state.get("dados_casas", [])
-        if len(dados_casas) > 1:
-            for linha in dados_casas[1:]:
+        # Verifica duplicata lendo direto da planilha
+        todas_casas = ws_casas.get_all_values()
+        if len(todas_casas) > 1:
+            for linha in todas_casas[1:]:
                 if len(linha) >= 2:
                     if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
                         return False, "Casa já cadastrada neste município!"
@@ -406,7 +397,6 @@ def adicionar_casa(client, municipio, casa, usuario):
                 continue
         
         barra_progresso.progress(1.0)
-        limpar_cache_dados()
         
         return True, f"✅ Casa '{casa}' + {len(MATERIAIS_PADRAO)} materiais salvos!"
     except Exception as e:
@@ -427,8 +417,6 @@ def marcar_entrega(client, linha, material, usuario):
         
         data_entrega = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         ws_entregas.update(f'D{linha}:F{linha}', [["Sim", data_entrega, usuario]])
-        
-        limpar_cache_dados()
         
         return True, "Entrega confirmada!"
     except Exception as e:
@@ -528,10 +516,6 @@ def tela_principal():
     
     casas_por_municipio = processar_casas(dados_casas)
     
-    if st.button("🔄 Recarregar Dados"):
-        limpar_cache_dados()
-        st.rerun()
-    
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
     
     # ===== TAB 1: CONTROLE DE ENTREGAS =====
@@ -562,7 +546,7 @@ def tela_principal():
                         
                         if not entregas:
                             st.warning("⚠️ Nenhum material cadastrado para esta casa.")
-                            st.info("💡 Clique em '🔄 Recarregar Dados' se acabou de adicionar a casa")
+                            st.info("💡 Se acabou de adicionar a casa, recarregue a página (F5)")
                             continue
                         
                         col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
@@ -663,9 +647,14 @@ def tela_principal():
                     if sucesso:
                         st.success(msg)
                         st.balloons()
-                        st.info("⏳ Aguarde 5 segundos...")
-                        time.sleep(5)
+                        st.info("⏳ Limpando cache e recarregando...")
+                        
+                        # LIMPA TODO O CACHE - inclusive do @st.cache_resource
                         limpar_cache_dados()
+                        if "planilha_inicializada" in st.session_state:
+                            del st.session_state.planilha_inicializada
+                        
+                        time.sleep(3)
                         st.rerun()
                     else:
                         st.error(msg)
