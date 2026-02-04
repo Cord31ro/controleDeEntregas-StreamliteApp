@@ -197,26 +197,22 @@ USUARIOS = {
     "gutemberg": {
         "nome": "Gutemberg Martins",
         "pin": "0000",
-        "admin": True,
-        "pode_desmarcar": True
+        "admin": True
     },
     "severino": {
         "nome": "Severino Cordeiro",
         "pin": "0101",
-        "admin": False,
-        "pode_desmarcar": False
+        "admin": False
     },
     "virgilho": {
         "nome": "Virgilho Cordeiro",
         "pin": "0209",
-        "admin": False,
-        "pode_desmarcar": False
+        "admin": False
     },
     "gutemberg_filho": {
         "nome": "Gutemberg Filho",
         "pin": "2004",
-        "admin": False,
-        "pode_desmarcar": True
+        "admin": False
     },
 }
 
@@ -365,7 +361,7 @@ def processar_entregas(dados_entregas, municipio, casa):
 
 
 def adicionar_casa(client, municipio, casa, usuario):
-    """Adiciona uma nova casa na planilha"""
+    """Adiciona uma nova casa na planilha - OTIMIZADO COM LOTES"""
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
         
@@ -383,25 +379,30 @@ def adicionar_casa(client, municipio, casa, usuario):
         
         data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
-        time.sleep(1)
+        time.sleep(2)
         
-        st.info(f"📝 Casa registrada. Adicionando {len(MATERIAIS_PADRAO)} materiais (isso vai demorar ~2 minutos)...")
+        st.info(f"📝 Casa registrada. Adicionando {len(MATERIAIS_PADRAO)} materiais em lotes...")
         
-        # Adiciona UM POR UM para garantir
+        # Adiciona em lotes de 30 materiais com pausas de 3 segundos
+        lote_size = 30
         barra_progresso = st.progress(0)
-        for idx, material in enumerate(MATERIAIS_PADRAO):
+        
+        for i in range(0, len(MATERIAIS_PADRAO), lote_size):
+            lote = MATERIAIS_PADRAO[i:i+lote_size]
+            linhas_materiais = []
+            
+            for material in lote:
+                linhas_materiais.append([municipio, casa, material, "Não", "", ""])
+            
             try:
-                ws_entregas.append_row([municipio, casa, material, "Não", "", ""])
-                
-                # Atualiza progresso a cada 10 materiais
-                if (idx + 1) % 10 == 0:
-                    barra_progresso.progress((idx + 1) / len(MATERIAIS_PADRAO))
-                    st.write(f"✓ {idx + 1}/{len(MATERIAIS_PADRAO)} materiais")
-                
-                # Pausa mínima entre requisições
-                time.sleep(0.5)
+                ws_entregas.append_rows(linhas_materiais)
+                progresso = min((i + lote_size) / len(MATERIAIS_PADRAO), 1.0)
+                barra_progresso.progress(progresso)
+                st.write(f"✓ {min(i + lote_size, len(MATERIAIS_PADRAO))}/{len(MATERIAIS_PADRAO)} materiais")
+                time.sleep(3)  # 3 segundos entre cada lote
             except Exception as e:
-                st.error(f"Erro no material '{material}': {e}")
+                st.error(f"Erro no lote {i}-{i+lote_size}: {e}")
+                time.sleep(5)  # Espera mais tempo se houver erro
                 continue
         
         barra_progresso.progress(1.0)
@@ -432,24 +433,6 @@ def marcar_entrega(client, linha, material, usuario):
         return True, "Entrega confirmada!"
     except Exception as e:
         return False, f"Erro ao marcar entrega: {e}"
-
-
-def desmarcar_entrega(client, linha):
-    """Desmarca um material como entregue"""
-    if not client:
-        return False, "Cliente do Google Sheets não inicializado"
-        
-    try:
-        sheet = client.open_by_url(SHEET_URL)
-        ws_entregas = sheet.worksheet("Entregas")
-        
-        ws_entregas.update(f'D{linha}:F{linha}', [["Não", "", ""]])
-        
-        limpar_cache_dados()
-        
-        return True, "Entrega desmarcada!"
-    except Exception as e:
-        return False, f"Erro ao desmarcar entrega: {e}"
 
 
 # =====================================================
@@ -496,7 +479,6 @@ def tela_login():
                 st.session_state.usuario = username
                 st.session_state.nome_usuario = USUARIOS[username]["nome"]
                 st.session_state.is_admin = USUARIOS[username]["admin"]
-                st.session_state.pode_desmarcar = USUARIOS[username]["pode_desmarcar"]
                 st.success(f"Bem-vindo, {USUARIOS[username]['nome']}!")
                 st.rerun()
             else:
@@ -580,7 +562,7 @@ def tela_principal():
                         
                         if not entregas:
                             st.warning("⚠️ Nenhum material cadastrado para esta casa.")
-                            st.info("💡 Pode levar alguns segundos para os materiais aparecerem após adicionar a casa. Clique em '🔄 Recarregar Dados'")
+                            st.info("💡 Clique em '🔄 Recarregar Dados' se acabou de adicionar a casa")
                             continue
                         
                         col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
@@ -600,31 +582,16 @@ def tela_principal():
                                 btn_key = f"btn_{municipio_selecionado}_{casa}_{item['linha']}"
                                 
                                 if item["entregue"]:
-                                    # Se usuário PODE desmarcar
-                                    if st.session_state.get("pode_desmarcar", False):
-                                        clicked = st.button(
-                                            "✅ Entregue",
-                                            key=btn_key,
-                                            type="primary",
-                                            use_container_width=True
-                                        )
-                                        if clicked:
-                                            st.session_state[chave_expander] = True
-                                            sucesso, msg = desmarcar_entrega(client, item["linha"])
-                                            if sucesso:
-                                                st.rerun()
-                                            else:
-                                                st.error(msg)
-                                    else:
-                                        # Usuário NÃO pode desmarcar - botão desabilitado
-                                        st.button(
-                                            "✅ Entregue",
-                                            key=btn_key,
-                                            type="primary",
-                                            use_container_width=True,
-                                            disabled=True
-                                        )
+                                    # Botão desabilitado - não pode desmarcar
+                                    st.button(
+                                        "✅ Entregue",
+                                        key=btn_key,
+                                        type="primary",
+                                        use_container_width=True,
+                                        disabled=True
+                                    )
                                 else:
+                                    # Pode marcar como entregue
                                     clicked = st.button(
                                         "❌ Pendente",
                                         key=btn_key,
@@ -669,7 +636,7 @@ def tela_principal():
     with tab2:
         st.subheader("➕ Adicionar Nova Casa")
         
-        st.info(f"💡 Ao adicionar uma casa, {len(MATERIAIS_PADRAO)} materiais serão cadastrados automaticamente")
+        st.info(f"💡 Ao adicionar uma casa, {len(MATERIAIS_PADRAO)} materiais serão cadastrados (leva ~1-2 minutos)")
         
         col1, col2 = st.columns(2)
         
@@ -685,7 +652,7 @@ def tela_principal():
             if not casa_nova or not casa_nova.strip():
                 st.error("❌ Por favor, informe o nome da casa!")
             else:
-                with st.spinner(f"Adicionando casa com {len(MATERIAIS_PADRAO)} materiais... Aguarde..."):
+                with st.spinner("Adicionando casa e materiais..."):
                     sucesso, msg = adicionar_casa(
                         client, 
                         municipio_novo, 
@@ -696,9 +663,8 @@ def tela_principal():
                     if sucesso:
                         st.success(msg)
                         st.balloons()
-                        st.info("⏳ Aguarde 5 segundos para garantir que os dados foram salvos...")
+                        st.info("⏳ Aguarde 5 segundos...")
                         time.sleep(5)
-                        # Limpa TUDO do cache para forçar reload
                         limpar_cache_dados()
                         st.rerun()
                     else:
