@@ -1,10 +1,13 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 import hashlib
 import time
+
+# Timezone de Brasília (UTC-3)
+TZ_BRASILIA = timezone(timedelta(hours=-3))
 
 # =====================================================
 # CONFIGURAÇÕES
@@ -383,7 +386,7 @@ def adicionar_casa(client, municipio, casa, usuario):
                         return False, "Casa já cadastrada neste município!"
         
         # Adiciona APENAS a casa
-        data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        data_cadastro = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
         
         return True, f"✅ Casa '{casa}' cadastrada com sucesso!"
@@ -405,7 +408,7 @@ def marcar_entrega(client, municipio, casa, material, usuario):
         sheet = client.open_by_url(SHEET_URL)
         ws_entregas = sheet.worksheet("Entregas")
         
-        data_entrega = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        data_entrega = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
         
         # Adiciona nova linha na planilha
         ws_entregas.append_row([municipio, casa, material, data_entrega, usuario])
