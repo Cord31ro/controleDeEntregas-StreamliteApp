@@ -217,7 +217,7 @@ USUARIOS = {
 }
 
 # =====================================================
-# FUNÇÕES DO GOOGLE SHEETS COM CACHE
+# FUNÇÕES DO GOOGLE SHEETS
 # =====================================================
 
 @st.cache_resource
@@ -242,7 +242,7 @@ def conectar_google_sheets():
 
 
 def inicializar_planilha(client):
-    """Cria as abas necessárias se não existirem - APENAS UMA VEZ"""
+    """Cria as abas necessárias se não existirem"""
     if not client:
         return None
     
@@ -263,7 +263,7 @@ def inicializar_planilha(client):
             ws_entregas = sheet.worksheet("Entregas")
         except:
             ws_entregas = sheet.add_worksheet(title="Entregas", rows=10000, cols=10)
-            ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
+            ws_entregas.update('A1', [["Município", "Casa", "Material", "Data Entrega", "Confirmado Por"]])
             time.sleep(1)
         
         st.session_state.planilha_inicializada = sheet
@@ -271,13 +271,6 @@ def inicializar_planilha(client):
     except Exception as e:
         st.error(f"Erro ao inicializar planilha: {e}")
         return None
-
-
-def limpar_cache_dados():
-    """Limpa TODO o cache de dados para forçar recarga completa"""
-    for chave in ["ultimo_carregamento", "dados_casas", "dados_entregas"]:
-        if chave in st.session_state:
-            del st.session_state[chave]
 
 
 def carregar_todos_dados(client):
@@ -298,7 +291,7 @@ def carregar_todos_dados(client):
         
         dados_entregas_padronizados = []
         for linha in dados_entregas:
-            while len(linha) < 6:
+            while len(linha) < 5:
                 linha.append("")
             dados_entregas_padronizados.append(linha)
         
@@ -329,38 +322,59 @@ def processar_casas(dados_casas):
 
 
 def processar_entregas(dados_entregas, municipio, casa):
-    """Processa as entregas de uma casa específica dos dados já carregados"""
-    if not dados_entregas or len(dados_entregas) <= 1:
-        return []
+    """
+    NOVA LÓGICA: Combina materiais da lista padrão com os salvos na planilha
+    - Mostra TODOS os 159 materiais
+    - Marca como entregue apenas os que estão na planilha
+    """
+    # Carrega os materiais já entregues da planilha
+    materiais_entregues = {}
     
+    if dados_entregas and len(dados_entregas) > 1:
+        for linha in dados_entregas[1:]:
+            while len(linha) < 5:
+                linha.append("")
+            
+            if linha[0] == municipio and linha[1] == casa and linha[2] != "":
+                materiais_entregues[linha[2]] = {
+                    "data_entrega": linha[3],
+                    "confirmado_por": linha[4]
+                }
+    
+    # Cria lista completa combinando lista padrão com dados da planilha
     entregas = []
-    for i, linha in enumerate(dados_entregas[1:], start=2):
-        while len(linha) < 6:
-            linha.append("")
-        
-        if linha[0] == municipio and linha[1] == casa and linha[2] != "":
+    for material in MATERIAIS_PADRAO:
+        if material in materiais_entregues:
             entregas.append({
-                "linha": i,
-                "material": linha[2],
-                "entregue": linha[3].strip().lower() == "sim",
-                "data_entrega": linha[4],
-                "confirmado_por": linha[5]
+                "material": material,
+                "entregue": True,
+                "data_entrega": materiais_entregues[material]["data_entrega"],
+                "confirmado_por": materiais_entregues[material]["confirmado_por"]
+            })
+        else:
+            entregas.append({
+                "material": material,
+                "entregue": False,
+                "data_entrega": "",
+                "confirmado_por": ""
             })
     
     return entregas
 
 
 def adicionar_casa(client, municipio, casa, usuario):
-    """Adiciona uma nova casa na planilha - OTIMIZADO COM LOTES"""
+    """
+    NOVA LÓGICA: Só adiciona a casa, NÃO adiciona materiais
+    Materiais são adicionados apenas quando marcados como entregues
+    """
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
         
     try:
         sheet = client.open_by_url(SHEET_URL)
         ws_casas = sheet.worksheet("Casas")
-        ws_entregas = sheet.worksheet("Entregas")
         
-        # Verifica duplicata lendo direto da planilha
+        # Verifica duplicata
         todas_casas = ws_casas.get_all_values()
         if len(todas_casas) > 1:
             for linha in todas_casas[1:]:
@@ -368,37 +382,11 @@ def adicionar_casa(client, municipio, casa, usuario):
                     if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
                         return False, "Casa já cadastrada neste município!"
         
+        # Adiciona APENAS a casa
         data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
-        time.sleep(2)
         
-        st.info(f"📝 Casa registrada. Adicionando {len(MATERIAIS_PADRAO)} materiais em lotes...")
-        
-        # Adiciona em lotes de 30 materiais com pausas de 3 segundos
-        lote_size = 30
-        barra_progresso = st.progress(0)
-        
-        for i in range(0, len(MATERIAIS_PADRAO), lote_size):
-            lote = MATERIAIS_PADRAO[i:i+lote_size]
-            linhas_materiais = []
-            
-            for material in lote:
-                linhas_materiais.append([municipio, casa, material, "Não", "", ""])
-            
-            try:
-                ws_entregas.append_rows(linhas_materiais)
-                progresso = min((i + lote_size) / len(MATERIAIS_PADRAO), 1.0)
-                barra_progresso.progress(progresso)
-                st.write(f"✓ {min(i + lote_size, len(MATERIAIS_PADRAO))}/{len(MATERIAIS_PADRAO)} materiais")
-                time.sleep(3)  # 3 segundos entre cada lote
-            except Exception as e:
-                st.error(f"Erro no lote {i}-{i+lote_size}: {e}")
-                time.sleep(5)  # Espera mais tempo se houver erro
-                continue
-        
-        barra_progresso.progress(1.0)
-        
-        return True, f"✅ Casa '{casa}' + {len(MATERIAIS_PADRAO)} materiais salvos!"
+        return True, f"✅ Casa '{casa}' cadastrada com sucesso!"
     except Exception as e:
         import traceback
         erro_completo = traceback.format_exc()
@@ -406,8 +394,10 @@ def adicionar_casa(client, municipio, casa, usuario):
         return False, f"Erro: {str(e)}"
 
 
-def marcar_entrega(client, linha, material, usuario):
-    """Marca um material como entregue"""
+def marcar_entrega(client, municipio, casa, material, usuario):
+    """
+    NOVA LÓGICA: Adiciona uma nova linha na planilha quando marca como entregue
+    """
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
         
@@ -416,7 +406,9 @@ def marcar_entrega(client, linha, material, usuario):
         ws_entregas = sheet.worksheet("Entregas")
         
         data_entrega = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        ws_entregas.update(f'D{linha}:F{linha}', [["Sim", data_entrega, usuario]])
+        
+        # Adiciona nova linha na planilha
+        ws_entregas.append_row([municipio, casa, material, data_entrega, usuario])
         
         return True, "Entrega confirmada!"
     except Exception as e:
@@ -516,6 +508,13 @@ def tela_principal():
     
     casas_por_municipio = processar_casas(dados_casas)
     
+    # Botão para forçar recarga manual
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 4])
+    with col_btn1:
+        if st.button("🔄 Recarregar Dados", use_container_width=True):
+            st.cache_resource.clear()
+            st.rerun()
+    
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
     
     # ===== TAB 1: CONTROLE DE ENTREGAS =====
@@ -544,11 +543,6 @@ def tela_principal():
                     with st.expander(titulo_expander, expanded=expanded_default):
                         st.session_state[chave_expander] = True
                         
-                        if not entregas:
-                            st.warning("⚠️ Nenhum material cadastrado para esta casa.")
-                            st.info("💡 Se acabou de adicionar a casa, recarregue a página (F5)")
-                            continue
-                        
                         col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
                         col1.write("**Material**")
                         col2.write("**Status**")
@@ -563,7 +557,7 @@ def tela_principal():
                                 st.write(item["material"])
                             
                             with col2:
-                                btn_key = f"btn_{municipio_selecionado}_{casa}_{item['linha']}"
+                                btn_key = f"btn_{municipio_selecionado}_{casa}_{item['material']}"
                                 
                                 if item["entregue"]:
                                     # Botão desabilitado - não pode desmarcar
@@ -586,7 +580,8 @@ def tela_principal():
                                         st.session_state[chave_expander] = True
                                         sucesso, msg = marcar_entrega(
                                             client,
-                                            item["linha"],
+                                            municipio_selecionado,
+                                            casa,
                                             item["material"],
                                             st.session_state.nome_usuario
                                         )
@@ -620,7 +615,7 @@ def tela_principal():
     with tab2:
         st.subheader("➕ Adicionar Nova Casa")
         
-        st.info(f"💡 Ao adicionar uma casa, {len(MATERIAIS_PADRAO)} materiais serão cadastrados (leva ~1-2 minutos)")
+        st.info(f"💡 Casa será criada instantaneamente! Os {len(MATERIAIS_PADRAO)} materiais aparecem automaticamente para controle.")
         
         col1, col2 = st.columns(2)
         
@@ -636,7 +631,7 @@ def tela_principal():
             if not casa_nova or not casa_nova.strip():
                 st.error("❌ Por favor, informe o nome da casa!")
             else:
-                with st.spinner("Adicionando casa e materiais..."):
+                with st.spinner("Adicionando casa..."):
                     sucesso, msg = adicionar_casa(
                         client, 
                         municipio_novo, 
@@ -647,14 +642,8 @@ def tela_principal():
                     if sucesso:
                         st.success(msg)
                         st.balloons()
-                        st.info("⏳ Limpando cache e recarregando...")
-                        
-                        # LIMPA TODO O CACHE - inclusive do @st.cache_resource
-                        limpar_cache_dados()
-                        if "planilha_inicializada" in st.session_state:
-                            del st.session_state.planilha_inicializada
-                        
-                        time.sleep(3)
+                        time.sleep(2)
+                        st.cache_resource.clear()
                         st.rerun()
                     else:
                         st.error(msg)
