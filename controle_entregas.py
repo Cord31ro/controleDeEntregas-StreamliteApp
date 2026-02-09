@@ -28,6 +28,16 @@ SCOPES = [
 ]
 
 # =====================================================
+# MATERIAIS COM QUANTIDADE
+# =====================================================
+
+MATERIAIS_COM_QUANTIDADE = {
+    "Cimento composto CP II": "sacos",
+    "Pedra brita 19": "m³",
+    "Areia média": "m³"
+}
+
+# =====================================================
 # MUNICÍPIOS E MATERIAIS
 # =====================================================
 
@@ -264,9 +274,19 @@ def inicializar_planilha(client):
         
         try:
             ws_entregas = sheet.worksheet("Entregas")
+            
+            # Verifica se a coluna "Quantidade" existe
+            header = ws_entregas.row_values(1)
+            if len(header) < 6 or header[3] != "Quantidade":
+                # Adiciona a coluna "Quantidade" na posição 4 (índice 3)
+                ws_entregas.insert_cols([[]], col=4)
+                time.sleep(1)
+                ws_entregas.update('A1', [["Município", "Casa", "Material", "Quantidade", "Data Entrega", "Confirmado Por"]])
+                time.sleep(1)
+                st.info("✅ Coluna 'Quantidade' adicionada à planilha!")
         except:
             ws_entregas = sheet.add_worksheet(title="Entregas", rows=10000, cols=10)
-            ws_entregas.update('A1', [["Município", "Casa", "Material", "Data Entrega", "Confirmado Por"]])
+            ws_entregas.update('A1', [["Município", "Casa", "Material", "Quantidade", "Data Entrega", "Confirmado Por"]])
             time.sleep(1)
         
         st.session_state.planilha_inicializada = sheet
@@ -292,9 +312,13 @@ def carregar_todos_dados(client):
         ws_entregas = sheet.worksheet("Entregas")
         dados_entregas = ws_entregas.get_all_values()
         
+        # Padroniza para 6 colunas (compatibilidade com formato antigo de 5 colunas)
         dados_entregas_padronizados = []
         for linha in dados_entregas:
-            while len(linha) < 5:
+            if len(linha) == 5:
+                # Formato antigo: adiciona coluna vazia para quantidade
+                linha.insert(3, "")
+            while len(linha) < 6:
                 linha.append("")
             dados_entregas_padronizados.append(linha)
         
@@ -326,40 +350,66 @@ def processar_casas(dados_casas):
 
 def processar_entregas(dados_entregas, municipio, casa):
     """
-    NOVA LÓGICA: Combina materiais da lista padrão com os salvos na planilha
-    - Mostra TODOS os 159 materiais
-    - Marca como entregue apenas os que estão na planilha
+    Processa entregas com suporte a quantidades
+    Retorna lista de materiais com histórico de entregas
     """
     # Carrega os materiais já entregues da planilha
-    materiais_entregues = {}
+    entregas_historico = {}
     
     if dados_entregas and len(dados_entregas) > 1:
         for linha in dados_entregas[1:]:
-            while len(linha) < 5:
+            while len(linha) < 6:
                 linha.append("")
             
             if linha[0] == municipio and linha[1] == casa and linha[2] != "":
-                materiais_entregues[linha[2]] = {
-                    "data_entrega": linha[3],
-                    "confirmado_por": linha[4]
-                }
+                material = linha[2]
+                quantidade = linha[3]
+                data_entrega = linha[4]
+                confirmado_por = linha[5]
+                
+                if material not in entregas_historico:
+                    entregas_historico[material] = []
+                
+                entregas_historico[material].append({
+                    "quantidade": quantidade,
+                    "data_entrega": data_entrega,
+                    "confirmado_por": confirmado_por
+                })
     
     # Cria lista completa combinando lista padrão com dados da planilha
     entregas = []
     for material in MATERIAIS_PADRAO:
-        if material in materiais_entregues:
-            entregas.append({
-                "material": material,
-                "entregue": True,
-                "data_entrega": materiais_entregues[material]["data_entrega"],
-                "confirmado_por": materiais_entregues[material]["confirmado_por"]
-            })
+        if material in entregas_historico:
+            # Calcula quantidade total se for material quantitativo
+            if material in MATERIAIS_COM_QUANTIDADE:
+                total_qtd = 0
+                for entrega in entregas_historico[material]:
+                    try:
+                        qtd = float(entrega["quantidade"]) if entrega["quantidade"] else 0
+                        total_qtd += qtd
+                    except:
+                        pass
+                
+                entregas.append({
+                    "material": material,
+                    "entregue": True,
+                    "historico": entregas_historico[material],
+                    "quantidade_total": total_qtd
+                })
+            else:
+                # Material normal (sem quantidade)
+                entregas.append({
+                    "material": material,
+                    "entregue": True,
+                    "historico": entregas_historico[material],
+                    "quantidade_total": None
+                })
         else:
             entregas.append({
                 "material": material,
                 "entregue": False,
-                "data_entrega": "",
-                "confirmado_por": ""
+                "historico": [],
+                "quantidade_total": None
             })
     
     return entregas
@@ -367,7 +417,7 @@ def processar_entregas(dados_entregas, municipio, casa):
 
 def adicionar_casa(client, municipio, casa, usuario):
     """
-    NOVA LÓGICA: Só adiciona a casa, NÃO adiciona materiais
+    Só adiciona a casa, NÃO adiciona materiais
     Materiais são adicionados apenas quando marcados como entregues
     """
     if not client:
@@ -397,9 +447,10 @@ def adicionar_casa(client, municipio, casa, usuario):
         return False, f"Erro: {str(e)}"
 
 
-def marcar_entrega(client, municipio, casa, material, usuario):
+def marcar_entrega(client, municipio, casa, material, usuario, quantidade=None):
     """
-    NOVA LÓGICA: Adiciona uma nova linha na planilha quando marca como entregue
+    Adiciona uma nova linha na planilha quando marca como entregue
+    Agora com suporte a quantidade
     """
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
@@ -410,8 +461,11 @@ def marcar_entrega(client, municipio, casa, material, usuario):
         
         data_entrega = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
         
+        # Formata quantidade para string (vazio se None)
+        qtd_str = str(quantidade) if quantidade is not None else ""
+        
         # Adiciona nova linha na planilha
-        ws_entregas.append_row([municipio, casa, material, data_entrega, usuario])
+        ws_entregas.append_row([municipio, casa, material, qtd_str, data_entrega, usuario])
         
         return True, "Entrega confirmada!"
     except Exception as e:
@@ -546,65 +600,123 @@ def tela_principal():
                     with st.expander(titulo_expander, expanded=expanded_default):
                         st.session_state[chave_expander] = True
                         
-                        col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
+                        # Cabeçalho
+                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2.5])
                         col1.write("**Material**")
                         col2.write("**Status**")
-                        col3.write("**Data Entrega**")
-                        col4.write("**Confirmado Por**")
+                        col3.write("**Quantidade**")
+                        col4.write("**Última Entrega**")
                         st.markdown("---")
                         
                         for item in entregas:
-                            col1, col2, col3, col4 = st.columns([3, 1.5, 2.5, 2.5])
+                            col1, col2, col3, col4 = st.columns([3, 2, 2, 2.5])
+                            
+                            material = item["material"]
+                            tem_quantidade = material in MATERIAIS_COM_QUANTIDADE
                             
                             with col1:
-                                st.write(item["material"])
+                                st.write(material)
                             
                             with col2:
-                                btn_key = f"btn_{municipio_selecionado}_{casa}_{item['material']}"
-                                
                                 if item["entregue"]:
-                                    # Botão desabilitado - não pode desmarcar
-                                    st.button(
-                                        "✅ Entregue",
-                                        key=btn_key,
-                                        type="primary",
-                                        use_container_width=True,
-                                        disabled=True
-                                    )
+                                    # Material já entregue
+                                    if tem_quantidade:
+                                        # Permite adicionar mais quantidade
+                                        btn_key = f"btn_add_{municipio_selecionado}_{casa}_{material}"
+                                        if st.button("➕ Adicionar", key=btn_key, type="secondary", use_container_width=True):
+                                            # Abre modal para adicionar quantidade
+                                            st.session_state[f"modal_{municipio_selecionado}_{casa}_{material}"] = True
+                                            st.session_state[chave_expander] = True
+                                    else:
+                                        # Material normal - não pode modificar
+                                        st.button("✅ Entregue", key=f"btn_{municipio_selecionado}_{casa}_{material}", 
+                                                type="primary", use_container_width=True, disabled=True)
                                 else:
-                                    # Pode marcar como entregue
-                                    clicked = st.button(
-                                        "❌ Pendente",
-                                        key=btn_key,
-                                        type="secondary",
-                                        use_container_width=True
-                                    )
-                                    if clicked:
-                                        st.session_state[chave_expander] = True
-                                        sucesso, msg = marcar_entrega(
-                                            client,
-                                            municipio_selecionado,
-                                            casa,
-                                            item["material"],
-                                            st.session_state.nome_usuario
-                                        )
-                                        if sucesso:
-                                            st.rerun()
-                                        else:
-                                            st.error(msg)
+                                    # Material pendente
+                                    if tem_quantidade:
+                                        # Abre modal para primeira entrega
+                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}"
+                                        if st.button("📦 Registrar", key=btn_key, type="secondary", use_container_width=True):
+                                            st.session_state[f"modal_{municipio_selecionado}_{casa}_{material}"] = True
+                                            st.session_state[chave_expander] = True
+                                    else:
+                                        # Material normal - marca como entregue
+                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}"
+                                        clicked = st.button("❌ Pendente", key=btn_key, type="secondary", use_container_width=True)
+                                        if clicked:
+                                            st.session_state[chave_expander] = True
+                                            sucesso, msg = marcar_entrega(client, municipio_selecionado, casa, material, 
+                                                                         st.session_state.nome_usuario)
+                                            if sucesso:
+                                                st.rerun()
+                                            else:
+                                                st.error(msg)
                             
                             with col3:
-                                if item["entregue"]:
-                                    st.write(f"📅 {item['data_entrega']}")
+                                if tem_quantidade and item["entregue"]:
+                                    unidade = MATERIAIS_COM_QUANTIDADE[material]
+                                    qtd_total = item["quantidade_total"]
+                                    st.write(f"**{qtd_total:.1f}** {unidade}")
                                 else:
                                     st.write("—")
                             
                             with col4:
-                                if item["entregue"]:
-                                    st.write(f"👤 {item['confirmado_por']}")
+                                if item["entregue"] and item["historico"]:
+                                    ultima = item["historico"][-1]
+                                    if tem_quantidade:
+                                        unidade = MATERIAIS_COM_QUANTIDADE[material]
+                                        qtd = ultima["quantidade"]
+                                        st.write(f"{qtd} {unidade} • {ultima['data_entrega'][:10]}")
+                                    else:
+                                        st.write(f"📅 {ultima['data_entrega'][:10]}")
                                 else:
                                     st.write("—")
+                            
+                            # MODAL para registrar quantidade
+                            modal_key = f"modal_{municipio_selecionado}_{casa}_{material}"
+                            if st.session_state.get(modal_key, False):
+                                with st.container():
+                                    st.markdown("---")
+                                    unidade = MATERIAIS_COM_QUANTIDADE[material]
+                                    
+                                    col_a, col_b, col_c = st.columns([1, 2, 1])
+                                    with col_b:
+                                        st.write(f"**{material}**")
+                                        
+                                        quantidade_input = st.number_input(
+                                            f"Quantidade ({unidade})",
+                                            min_value=0.0,
+                                            step=0.5 if unidade == "m³" else 1.0,
+                                            key=f"input_{municipio_selecionado}_{casa}_{material}"
+                                        )
+                                        
+                                        col_x, col_y = st.columns(2)
+                                        
+                                        with col_x:
+                                            if st.button("✅ Confirmar", key=f"confirmar_{municipio_selecionado}_{casa}_{material}", 
+                                                       use_container_width=True, type="primary"):
+                                                if quantidade_input > 0:
+                                                    sucesso, msg = marcar_entrega(
+                                                        client, municipio_selecionado, casa, material,
+                                                        st.session_state.nome_usuario, quantidade_input
+                                                    )
+                                                    if sucesso:
+                                                        del st.session_state[modal_key]
+                                                        st.rerun()
+                                                    else:
+                                                        st.error(msg)
+                                                else:
+                                                    st.warning("⚠️ Quantidade deve ser maior que zero!")
+                                        
+                                        with col_y:
+                                            if st.button("❌ Cancelar", key=f"cancelar_{municipio_selecionado}_{casa}_{material}",
+                                                       use_container_width=True):
+                                                del st.session_state[modal_key]
+                                                st.rerun()
+                                    
+                                    st.markdown("---")
                         
+                        # Estatísticas
                         pendentes = total - entregues
                         st.markdown("---")
                         col1, col2, col3 = st.columns(3)
@@ -683,13 +795,29 @@ def tela_principal():
                     pendentes = total - entregues
                     percentual = (entregues / total * 100) if total > 0 else 0
                     
+                    # Calcula totais de materiais quantitativos
+                    cimento_total = 0
+                    brita_total = 0
+                    areia_total = 0
+                    
+                    for e in entregas:
+                        if e["material"] == "Cimento composto CP II" and e["entregue"]:
+                            cimento_total = e["quantidade_total"]
+                        elif e["material"] == "Pedra brita 19" and e["entregue"]:
+                            brita_total = e["quantidade_total"]
+                        elif e["material"] == "Areia média" and e["entregue"]:
+                            areia_total = e["quantidade_total"]
+                    
                     dados_relatorio.append({
                         "Município": municipio,
                         "Casa": casa,
                         "Total": total,
                         "Entregues": entregues,
                         "Pendentes": pendentes,
-                        "% Concluído": f"{percentual:.1f}%"
+                        "% Concluído": f"{percentual:.1f}%",
+                        "Cimento (sacos)": f"{cimento_total:.0f}" if cimento_total > 0 else "—",
+                        "Brita (m³)": f"{brita_total:.1f}" if brita_total > 0 else "—",
+                        "Areia (m³)": f"{areia_total:.1f}" if areia_total > 0 else "—"
                     })
         
         if dados_relatorio:
