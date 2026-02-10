@@ -230,12 +230,12 @@ USUARIOS = {
 }
 
 # =====================================================
-# FUNÇÕES DO GOOGLE SHEETS
+# FUNÇÕES OTIMIZADAS DO GOOGLE SHEETS
 # =====================================================
 
 @st.cache_resource
 def conectar_google_sheets():
-    """Conecta ao Google Sheets"""
+    """Conecta ao Google Sheets - CACHE PERMANENTE"""
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         
@@ -255,10 +255,11 @@ def conectar_google_sheets():
 
 
 def inicializar_planilha(client):
-    """Cria as abas necessárias se não existirem"""
+    """Cria as abas necessárias se não existirem - OTIMIZADO"""
     if not client:
         return None
     
+    # Usa session_state para evitar verificações repetidas
     if "planilha_inicializada" in st.session_state:
         return st.session_state.planilha_inicializada
         
@@ -296,21 +297,23 @@ def inicializar_planilha(client):
         return None
 
 
-def carregar_todos_dados(client):
-    """Carrega TODOS os dados de uma vez só"""
-    if not client:
+@st.cache_data(ttl=180)  # ⚡ CACHE POR 3 MINUTOS
+def carregar_todos_dados_cached(_client):
+    """
+    OTIMIZAÇÃO 1: Cache de 3 minutos
+    OTIMIZAÇÃO 2: Batch request (carrega tudo de uma vez)
+    """
+    if not _client:
         return None, None
     
     try:
-        sheet = client.open_by_url(SHEET_URL)
+        sheet = _client.open_by_url(SHEET_URL)
         
-        ws_casas = sheet.worksheet("Casas")
-        dados_casas = ws_casas.get_all_values()
+        # 🚀 BATCH REQUEST - Uma chamada só!
+        result = sheet.values_batch_get(['Casas!A:Z', 'Entregas!A:Z'])
         
-        time.sleep(1)
-        
-        ws_entregas = sheet.worksheet("Entregas")
-        dados_entregas = ws_entregas.get_all_values()
+        dados_casas = result['valueRanges'][0].get('values', [])
+        dados_entregas = result['valueRanges'][1].get('values', [])
         
         # Padroniza para 6 colunas (compatibilidade com formato antigo de 5 colunas)
         dados_entregas_padronizados = []
@@ -328,8 +331,9 @@ def carregar_todos_dados(client):
         return None, None
 
 
-def processar_casas(dados_casas):
-    """Processa os dados de casas já carregados"""
+@st.cache_data(ttl=180)  # ⚡ CACHE POR 3 MINUTOS
+def processar_casas_cached(dados_casas):
+    """OTIMIZADO: Cache no processamento de casas"""
     if not dados_casas or len(dados_casas) <= 1:
         return {}
     
@@ -348,11 +352,15 @@ def processar_casas(dados_casas):
     return casas_por_municipio
 
 
-def processar_entregas(dados_entregas, municipio, casa):
+@st.cache_data(ttl=180)  # ⚡ CACHE POR 3 MINUTOS
+def processar_entregas_cached(dados_entregas_tuple, municipio, casa):
     """
-    Processa entregas com suporte a quantidades
-    Retorna lista de materiais com histórico de entregas
+    OTIMIZAÇÃO 3: Lazy Loading - Processa apenas a casa selecionada
+    OTIMIZAÇÃO 4: Cache por município/casa
     """
+    # Converte tuple de volta para list (necessário para cache)
+    dados_entregas = [list(linha) for linha in dados_entregas_tuple]
+    
     # Carrega os materiais já entregues da planilha
     entregas_historico = {}
     
@@ -361,6 +369,7 @@ def processar_entregas(dados_entregas, municipio, casa):
             while len(linha) < 6:
                 linha.append("")
             
+            # 🎯 LAZY LOADING: Filtra apenas esta casa
             if linha[0] == municipio and linha[1] == casa and linha[2] != "":
                 material = linha[2]
                 quantidade = linha[3]
@@ -418,7 +427,7 @@ def processar_entregas(dados_entregas, municipio, casa):
 def adicionar_casa(client, municipio, casa, usuario):
     """
     Só adiciona a casa, NÃO adiciona materiais
-    Materiais são adicionados apenas quando marcados como entregues
+    OTIMIZADO: Limpa cache após modificação
     """
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
@@ -439,6 +448,9 @@ def adicionar_casa(client, municipio, casa, usuario):
         data_cadastro = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
         
+        # 🔄 LIMPA CACHE após modificação
+        st.cache_data.clear()
+        
         return True, f"✅ Casa '{casa}' cadastrada com sucesso!"
     except Exception as e:
         import traceback
@@ -450,7 +462,7 @@ def adicionar_casa(client, municipio, casa, usuario):
 def marcar_entrega(client, municipio, casa, material, usuario, quantidade=None):
     """
     Adiciona uma nova linha na planilha quando marca como entregue
-    Agora com suporte a quantidade
+    OTIMIZADO: Limpa cache após modificação
     """
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
@@ -466,6 +478,9 @@ def marcar_entrega(client, municipio, casa, material, usuario, quantidade=None):
         
         # Adiciona nova linha na planilha
         ws_entregas.append_row([municipio, casa, material, qtd_str, data_entrega, usuario])
+        
+        # 🔄 LIMPA CACHE após modificação
+        st.cache_data.clear()
         
         return True, "Entrega confirmada!"
     except Exception as e:
@@ -525,11 +540,11 @@ def tela_login():
 
 
 # =====================================================
-# INTERFACE - PRINCIPAL
+# INTERFACE - PRINCIPAL (OTIMIZADA)
 # =====================================================
 
 def tela_principal():
-    """Tela principal do sistema"""
+    """Tela principal do sistema - VERSÃO OTIMIZADA"""
     
     # Header
     col1, col2 = st.columns([3, 1])
@@ -556,21 +571,36 @@ def tela_principal():
         st.error("❌ Erro ao acessar a planilha.")
         return
     
-    with st.spinner("Carregando dados..."):
-        dados_casas, dados_entregas = carregar_todos_dados(client)
+    # 🚀 CARREGAMENTO OTIMIZADO COM CACHE
+    with st.spinner("⚡ Carregando dados (cache: 3 min)..."):
+        dados_casas, dados_entregas = carregar_todos_dados_cached(client)
     
     if dados_casas is None or dados_entregas is None:
         st.error("❌ Erro ao carregar dados da planilha.")
         return
     
-    casas_por_municipio = processar_casas(dados_casas)
+    # 🧠 SESSION STATE: Armazena dados processados
+    if 'casas_processadas' not in st.session_state or st.session_state.get('ultima_atualizacao', 0) < time.time() - 180:
+        casas_por_municipio = processar_casas_cached(tuple(map(tuple, dados_casas)))
+        st.session_state.casas_processadas = casas_por_municipio
+        st.session_state.ultima_atualizacao = time.time()
+    else:
+        casas_por_municipio = st.session_state.casas_processadas
     
     # Botão para forçar recarga manual
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 4])
     with col_btn1:
-        if st.button("🔄 Recarregar Dados", use_container_width=True):
+        if st.button("🔄 Recarregar", use_container_width=True):
+            st.cache_data.clear()
             st.cache_resource.clear()
+            if 'casas_processadas' in st.session_state:
+                del st.session_state.casas_processadas
             st.rerun()
+    
+    with col_btn2:
+        # Indicador de cache
+        tempo_cache = int(time.time() - st.session_state.get('ultima_atualizacao', time.time()))
+        st.caption(f"⏱️ Cache: {tempo_cache}s")
     
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
     
@@ -587,7 +617,9 @@ def tela_principal():
                 casas = casas_por_municipio[municipio_selecionado]
                 
                 for casa in casas:
-                    entregas = processar_entregas(dados_entregas, municipio_selecionado, casa)
+                    # 🎯 LAZY LOADING: Processa apenas quando necessário
+                    dados_entregas_tuple = tuple(map(tuple, dados_entregas))
+                    entregas = processar_entregas_cached(dados_entregas_tuple, municipio_selecionado, casa)
                     
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
@@ -648,6 +680,8 @@ def tela_principal():
                                             sucesso, msg = marcar_entrega(client, municipio_selecionado, casa, material, 
                                                                          st.session_state.nome_usuario)
                                             if sucesso:
+                                                st.success("✅ Entrega confirmada!")
+                                                time.sleep(0.5)
                                                 st.rerun()
                                             else:
                                                 st.error(msg)
@@ -702,6 +736,8 @@ def tela_principal():
                                                     )
                                                     if sucesso:
                                                         del st.session_state[modal_key]
+                                                        st.success("✅ Quantidade registrada!")
+                                                        time.sleep(0.5)
                                                         st.rerun()
                                                     else:
                                                         st.error(msg)
@@ -757,8 +793,7 @@ def tela_principal():
                     if sucesso:
                         st.success(msg)
                         st.balloons()
-                        time.sleep(2)
-                        st.cache_resource.clear()
+                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error(msg)
@@ -783,12 +818,14 @@ def tela_principal():
             st.info("Nenhum dado disponível.")
             return
         
+        # 🚀 OTIMIZAÇÃO: Processa relatório com cache
         dados_relatorio = []
+        dados_entregas_tuple = tuple(map(tuple, dados_entregas))
         
         for municipio in MUNICIPIOS:
             if municipio in casas_por_municipio:
                 for casa in casas_por_municipio[municipio]:
-                    entregas = processar_entregas(dados_entregas, municipio, casa)
+                    entregas = processar_entregas_cached(dados_entregas_tuple, municipio, casa)
                     
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
