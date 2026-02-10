@@ -540,11 +540,11 @@ def tela_login():
 
 
 # =====================================================
-# INTERFACE - PRINCIPAL (OTIMIZADA)
+# INTERFACE - PRINCIPAL (SUPER OTIMIZADA)
 # =====================================================
 
 def tela_principal():
-    """Tela principal do sistema - VERSÃO OTIMIZADA"""
+    """Tela principal do sistema - VERSÃO SUPER OTIMIZADA"""
     
     # Header
     col1, col2 = st.columns([3, 1])
@@ -624,14 +624,16 @@ def tela_principal():
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
                     
-                    chave_expander = f"expander_{municipio_selecionado}_{casa}"
-                    expanded_default = st.session_state.get(chave_expander, False)
+                    # 🔧 FIX: Controle de expander individualizado e isolado
+                    chave_expander = f"exp_{municipio_selecionado}_{casa}".replace(" ", "_")
+                    
+                    # Apenas expande se for a casa onde houve ação recente
+                    casa_acao_recente = st.session_state.get('casa_ultima_acao', '')
+                    expanded_default = (casa_acao_recente == f"{municipio_selecionado}_{casa}")
                     
                     titulo_expander = f"🏠 {casa}  |  ✅ {entregues}/{total} entregues"
                     
                     with st.expander(titulo_expander, expanded=expanded_default):
-                        st.session_state[chave_expander] = True
-                        
                         # Cabeçalho
                         col1, col2, col3, col4 = st.columns([3, 2, 2, 2.5])
                         col1.write("**Material**")
@@ -654,34 +656,48 @@ def tela_principal():
                                     # Material já entregue
                                     if tem_quantidade:
                                         # Permite adicionar mais quantidade
-                                        btn_key = f"btn_add_{municipio_selecionado}_{casa}_{material}"
+                                        btn_key = f"btn_add_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
                                         if st.button("➕ Adicionar", key=btn_key, type="secondary", use_container_width=True):
                                             # Abre modal para adicionar quantidade
                                             st.session_state[f"modal_{municipio_selecionado}_{casa}_{material}"] = True
-                                            st.session_state[chave_expander] = True
+                                            st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
+                                            st.rerun()
                                     else:
                                         # Material normal - não pode modificar
-                                        st.button("✅ Entregue", key=f"btn_{municipio_selecionado}_{casa}_{material}", 
-                                                type="primary", use_container_width=True, disabled=True)
+                                        st.button("✅ Entregue", 
+                                                key=f"btn_{municipio_selecionado}_{casa}_{material}".replace(" ", "_"), 
+                                                type="primary", 
+                                                use_container_width=True, 
+                                                disabled=True)
                                 else:
                                     # Material pendente
                                     if tem_quantidade:
                                         # Abre modal para primeira entrega
-                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}"
+                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
                                         if st.button("📦 Registrar", key=btn_key, type="secondary", use_container_width=True):
                                             st.session_state[f"modal_{municipio_selecionado}_{casa}_{material}"] = True
-                                            st.session_state[chave_expander] = True
+                                            st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
+                                            st.rerun()
                                     else:
-                                        # Material normal - marca como entregue
-                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}"
-                                        clicked = st.button("❌ Pendente", key=btn_key, type="secondary", use_container_width=True)
-                                        if clicked:
-                                            st.session_state[chave_expander] = True
-                                            sucesso, msg = marcar_entrega(client, municipio_selecionado, casa, material, 
-                                                                         st.session_state.nome_usuario)
+                                        # Material normal - marca como entregue IMEDIATAMENTE
+                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
+                                        
+                                        if st.button("❌ Pendente", key=btn_key, type="secondary", use_container_width=True):
+                                            # 🚀 OTIMIZAÇÃO: Marcar e mostrar feedback SEM rerun imediato
+                                            with st.spinner("Salvando..."):
+                                                sucesso, msg = marcar_entrega(
+                                                    client, 
+                                                    municipio_selecionado, 
+                                                    casa, 
+                                                    material, 
+                                                    st.session_state.nome_usuario
+                                                )
+                                            
                                             if sucesso:
-                                                st.success("✅ Entrega confirmada!")
-                                                time.sleep(0.5)
+                                                st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
+                                                st.toast("✅ Entrega confirmada!", icon="✅")
+                                                # Pequeno delay para o usuário ver o toast
+                                                time.sleep(0.3)
                                                 st.rerun()
                                             else:
                                                 st.error(msg)
@@ -721,23 +737,32 @@ def tela_principal():
                                             f"Quantidade ({unidade})",
                                             min_value=0.0,
                                             step=0.5 if unidade == "m³" else 1.0,
-                                            key=f"input_{municipio_selecionado}_{casa}_{material}"
+                                            key=f"input_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
                                         )
                                         
                                         col_x, col_y = st.columns(2)
                                         
                                         with col_x:
-                                            if st.button("✅ Confirmar", key=f"confirmar_{municipio_selecionado}_{casa}_{material}", 
-                                                       use_container_width=True, type="primary"):
+                                            if st.button("✅ Confirmar", 
+                                                       key=f"confirmar_{municipio_selecionado}_{casa}_{material}".replace(" ", "_"), 
+                                                       use_container_width=True, 
+                                                       type="primary"):
                                                 if quantidade_input > 0:
-                                                    sucesso, msg = marcar_entrega(
-                                                        client, municipio_selecionado, casa, material,
-                                                        st.session_state.nome_usuario, quantidade_input
-                                                    )
+                                                    with st.spinner("Salvando..."):
+                                                        sucesso, msg = marcar_entrega(
+                                                            client, 
+                                                            municipio_selecionado, 
+                                                            casa, 
+                                                            material,
+                                                            st.session_state.nome_usuario, 
+                                                            quantidade_input
+                                                        )
+                                                    
                                                     if sucesso:
                                                         del st.session_state[modal_key]
-                                                        st.success("✅ Quantidade registrada!")
-                                                        time.sleep(0.5)
+                                                        st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
+                                                        st.toast("✅ Quantidade registrada!", icon="✅")
+                                                        time.sleep(0.3)
                                                         st.rerun()
                                                     else:
                                                         st.error(msg)
@@ -745,7 +770,8 @@ def tela_principal():
                                                     st.warning("⚠️ Quantidade deve ser maior que zero!")
                                         
                                         with col_y:
-                                            if st.button("❌ Cancelar", key=f"cancelar_{municipio_selecionado}_{casa}_{material}",
+                                            if st.button("❌ Cancelar", 
+                                                       key=f"cancelar_{municipio_selecionado}_{casa}_{material}".replace(" ", "_"),
                                                        use_container_width=True):
                                                 del st.session_state[modal_key]
                                                 st.rerun()
