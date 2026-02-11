@@ -623,14 +623,9 @@ def tela_principal():
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
                     
-                    chave_expander = f"expander_{municipio_selecionado}_{casa}"
-                    expanded_default = st.session_state.get(chave_expander, False)
-                    
                     titulo_expander = f"🏠 {casa}  |  ✅ {entregues}/{total} entregues"
                     
-                    with st.expander(titulo_expander, expanded=expanded_default):
-                        st.session_state[chave_expander] = True
-                        
+                    with st.expander(titulo_expander, expanded=False):
                         # Usa FORM para evitar recargas a cada checkbox
                         with st.form(key=f"form_{municipio_selecionado}_{casa}"):
                             # Cabeçalho
