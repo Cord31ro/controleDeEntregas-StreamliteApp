@@ -1,9 +1,13 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 import hashlib
+import time
+
+# Timezone de Brasília (UTC-3)
+TZ_BRASILIA = timezone(timedelta(hours=-3))
 
 # =====================================================
 # CONFIGURAÇÕES
@@ -24,6 +28,168 @@ SCOPES = [
 ]
 
 # =====================================================
+# QUANTIDADES PADRÃO POR MATERIAL
+# =====================================================
+
+QUANTIDADES_PADRAO = {
+    # 🧱 ALVENARIA - Materiais variáveis (usuário define quantidade)
+    "Cimento composto CP II": {"unidade": "sacos", "padrao": None},  # Variável
+    "Pedra brita 19": {"unidade": "m³", "padrao": None},  # Variável
+    "Pedra rocha fundação": {"unidade": "m³", "padrao": None},  # Variável
+    "Areia média": {"unidade": "m³", "padrao": None},  # Variável
+    
+    # ALVENARIA - Materiais com quantidade fixa
+    "Aço vergalhão 10mm": {"unidade": "varas", "padrao": 20},
+    "Aço vergalhão 5,2mm": {"unidade": "varas", "padrao": 2},
+    "Arame recozido": {"unidade": "kg", "padrao": 1},
+    "Tijolo cerâmico": {"unidade": "un", "padrao": 4000},
+    "Trilho para laje": {"unidade": "m", "padrao": 50},
+    "Tábuas 0,30 x 3m": {"unidade": "un", "padrao": None},
+    "Tábuas 0,10 x 3m": {"unidade": "un", "padrao": None},
+    "Lajotas": {"unidade": "un", "padrao": 140},
+    
+    # 🏠 TELHADO
+    "Telha cerâmica": {"unidade": "un", "padrao": 2500},
+    "Linha 3/5 – 7,5m": {"unidade": "un", "padrao": 1},
+    "Linha 3/5 – 4m": {"unidade": "un", "padrao": 6},
+    "Linha 3/5 – 5m": {"unidade": "un", "padrao": 2},
+    "Linha 3/5 – 2m": {"unidade": "un", "padrao": 2},
+    "Barrote de 3m": {"unidade": "un", "padrao": None},
+    "Barrote 4,5m": {"unidade": "un", "padrao": 3},
+    "Caibros 5,5m": {"unidade": "un", "padrao": 46},
+    "Ripas": {"unidade": "m", "padrao": 260},
+    "Canaletas grandes": {"unidade": "un", "padrao": 150},
+    "Canaletas pequenas": {"unidade": "un", "padrao": 210},
+    "Sapata": {"unidade": "un", "padrao": None},
+    
+    # 🪟 ESQUADRIAS / ACABAMENTO
+    "Janela 1x1,20": {"unidade": "un", "padrao": 2},
+    "Janela 1,00x1": {"unidade": "un", "padrao": 2},
+    "Janela 50x50": {"unidade": "un", "padrao": 1},
+    "Porta semi-oca": {"unidade": "un", "padrao": 3},
+    "Porta almofadada": {"unidade": "un", "padrao": 3},
+    "Coluna 5/16 – 3m": {"unidade": "un", "padrao": 8},
+    "Cerâmica piso": {"unidade": "m²", "padrao": 45},
+    "Cerâmica parede": {"unidade": "m²", "padrao": 45},
+    "Argamassa 15kg": {"unidade": "un", "padrao": 35},
+    "Rejunte": {"unidade": "kg", "padrao": 13},
+    "Forra de porta (pct)": {"unidade": "un", "padrao": 3},
+    "Dobradiças p/ janela": {"unidade": "un", "padrao": 18},
+    "Dobradiças p/ portas": {"unidade": "un", "padrao": 15},
+    "Ferrolho redondo": {"unidade": "un", "padrao": 13},
+    "Parafusos p/ janela, porta e ferragem": {"unidade": "un", "padrao": 250},
+    "Pivoltante": {"unidade": "un", "padrao": None},
+    "Caixa d'água 500L": {"unidade": "un", "padrao": 1},
+    "Caixa d'água 1000L": {"unidade": "un", "padrao": 1},
+    
+    # 🚿 BANHEIRO / PINTURA
+    "Kit banheiro": {"unidade": "un", "padrao": 1},
+    "Fechadura externa": {"unidade": "un", "padrao": 1},
+    "Fechadura interna": {"unidade": "un", "padrao": 1},
+    "Fechadura banheiro": {"unidade": "un", "padrao": 1},
+    "Lixa 120": {"unidade": "un", "padrao": 3},
+    "Verniz 3L": {"unidade": "un", "padrao": 2},
+    "Tinta esmalte sintético 15L": {"unidade": "un", "padrao": 3},
+    "Selador 18L": {"unidade": "un", "padrao": 3},
+    "Cal para pintura": {"unidade": "un", "padrao": 1},
+    "Rolo para pintura 23cm": {"unidade": "un", "padrao": 2},
+    "Rolo para pintura 9cm": {"unidade": "un", "padrao": 1},
+    "Brocha para pintura": {"unidade": "un", "padrao": 2},
+    "Pincel 1 1/2 polegadas": {"unidade": "un", "padrao": 2},
+    
+    # ⚡ ELÉTRICA
+    "Quadro distribuição 6 disjuntores": {"unidade": "un", "padrao": 1},
+    "Quadro de luz completo": {"unidade": "un", "padrao": 1},
+    "Pontalete energia": {"unidade": "un", "padrao": 1},
+    "Eletroduto PVC corrugado": {"unidade": "m", "padrao": 80},
+    "Lâmpada": {"unidade": "un", "padrao": 6},
+    "Interruptor de 2 sessões": {"unidade": "un", "padrao": 7},
+    "Interruptor de 1 sessão": {"unidade": "un", "padrao": 2},
+    "Tomadas 10A": {"unidade": "un", "padrao": 3},
+    "Tomadas 20A": {"unidade": "un", "padrao": 1},
+    "Fita isolante": {"unidade": "rolo", "padrao": 1},
+    "Fio 4mm 750V": {"unidade": "m", "padrao": 20},
+    "Fio 2,5mm": {"unidade": "m", "padrao": 240},
+    "Fio 1,5mm": {"unidade": "m", "padrao": 100},
+    "Disjuntor 16 amperes": {"unidade": "un", "padrao": 2},
+    "Disjuntor 10 amperes": {"unidade": "un", "padrao": 1},
+    "Disjuntor 25 amperes": {"unidade": "un", "padrao": 1},
+    "Disjuntor 32 amperes": {"unidade": "un", "padrao": 1},
+    "Disjuntor 40 amperes DR": {"unidade": "un", "padrao": 1},
+    "Bocal de lâmpadas": {"unidade": "un", "padrao": 6},
+    "Plafon": {"unidade": "un", "padrao": 6},
+    "Cano eletroduto": {"unidade": "un", "padrao": 6},
+    "Capacete para eletrodutos": {"unidade": "un", "padrao": 1},
+    "Haste para aterramento": {"unidade": "un", "padrao": 2},
+    "Cone para aterramento": {"unidade": "un", "padrao": 2},
+    "Curva eletroduto 3/4": {"unidade": "un", "padrao": 4},
+    "Tomada da internet": {"unidade": "un", "padrao": 20},
+    "Tomada para TV": {"unidade": "un", "padrao": 5},
+    "Caixa PVC 4x2": {"unidade": "un", "padrao": 24},
+    "Fixa fio (pct)": {"unidade": "pct", "padrao": 10},
+    "Conector para haste": {"unidade": "un", "padrao": 2},
+    
+    # 🚰 HIDRÁULICA
+    "Joelho PVC 25mm": {"unidade": "un", "padrao": 5},
+    "Joelho redução 25x1/2\"": {"unidade": "un", "padrao": 7},
+    "Tê 25mm": {"unidade": "un", "padrao": 6},
+    "Registro gaveta cromado": {"unidade": "un", "padrao": 1},
+    "Registro pressão": {"unidade": "un", "padrao": 1},
+    "Adaptador curto SR 25mm x 3/4\"": {"unidade": "un", "padrao": 3},
+    "Joelho 40mm 90°": {"unidade": "un", "padrao": 10},
+    "Joelho 45° 50mm esgoto série normal": {"unidade": "un", "padrao": 2},
+    "Joelho 90° 50mm esgoto série normal": {"unidade": "un", "padrao": 3},
+    "Luva PVC SR 25mm x 3/4\" rosca externa": {"unidade": "un", "padrao": 1},
+    "Tê 100x50mm": {"unidade": "un", "padrao": 1},
+    "Tubo PVC 25mm 6m": {"unidade": "un", "padrao": 6},
+    "Tubo PVC esgoto 100mm 6m": {"unidade": "un", "padrao": 4},
+    "Tubo PVC esgoto 75mm 6m": {"unidade": "un", "padrao": 0},
+    "Tubo PVC esgoto 50mm 6m": {"unidade": "un", "padrao": 2},
+    "Tubo PVC esgoto 40mm 6m": {"unidade": "un", "padrao": 1},
+    "Tubo PVC água 40mm 1,5m": {"unidade": "un", "padrao": 1},
+    "Ralo sifonado": {"unidade": "un", "padrao": 2},
+    "Tê 40mm": {"unidade": "un", "padrao": 1},
+    "Tê 50mm": {"unidade": "un", "padrao": 1},
+    "Y esgoto 100x50mm": {"unidade": "un", "padrao": 1},
+    "Joelho esgoto 50mm 45°": {"unidade": "un", "padrao": 4},
+    "Joelho esgoto 50mm": {"unidade": "un", "padrao": 1},
+    "Joelho esgoto 40mm": {"unidade": "un", "padrao": 10},
+    "Joelho esgoto 40mm 45°": {"unidade": "un", "padrao": 6},
+    "Joelho esgoto 100mm": {"unidade": "un", "padrao": 5},
+    "Cola de cano 175g": {"unidade": "un", "padrao": 1},
+    "Sifão sifonado": {"unidade": "un", "padrao": 2},
+    "Torneira p/ lavatório": {"unidade": "un", "padrao": 1},
+    "Torneira p/ lavanderia": {"unidade": "un", "padrao": 1},
+    "Torneira p/ pia de cozinha": {"unidade": "un", "padrao": 1},
+    "Calha de PVC": {"unidade": "un", "padrao": 8},
+    "Terminal PVC": {"unidade": "un", "padrao": 1},
+    "Tampa PVC": {"unidade": "un", "padrao": 2},
+    "Emenda PVC para bica": {"unidade": "un", "padrao": 4},
+    "Suporte para bica": {"unidade": "un", "padrao": 8},
+    "Parafusos para suporte da bica": {"unidade": "un", "padrao": 24},
+    "Vedanel": {"unidade": "un", "padrao": 1},
+    "Flange 40mm": {"unidade": "un", "padrao": 2},
+    "Flange 25mm": {"unidade": "un", "padrao": 2},
+    "Válvula para lavatório": {"unidade": "un", "padrao": 2},
+    "Válvula para pia inox": {"unidade": "un", "padrao": 1},
+    "Chicote flexível 40cm": {"unidade": "un", "padrao": 3},
+    "Tanque p/ lavar roupa": {"unidade": "un", "padrao": 1},
+    "Cantoneira 40cm": {"unidade": "un", "padrao": 1},
+    "Parafuso com bucha 10mm": {"unidade": "un", "padrao": 4},
+    "Parafuso para tanque": {"unidade": "un", "padrao": 4},
+    "Pia de banheiro": {"unidade": "un", "padrao": 1},
+    "Arame da cisterna": {"unidade": "kg", "padrao": 15},
+    "Vaso acoplado": {"unidade": "un", "padrao": 1},
+    "Veda rosca": {"unidade": "un", "padrao": 2},
+    
+    # 🚿 ACESSIBILIDADE
+    "Parafuso p/ vaso sanitário": {"unidade": "un", "padrao": 4},
+    "Chuveiro com cano": {"unidade": "un", "padrao": 1},
+    "Barra de apoio 70cm": {"unidade": "un", "padrao": 1},
+    "Cadeira para banho": {"unidade": "un", "padrao": 1},
+}
+
+# =====================================================
 # MUNICÍPIOS E MATERIAIS
 # =====================================================
 
@@ -32,15 +198,7 @@ MUNICIPIOS = [
     "Pedra Lavrada",
 ]
 
-MATERIAIS_PADRAO = [
-    "Tijolo (1000 un)",
-    "Brita (5 m³)",
-    "Areia (5 m³)",
-    "Cimento (50 sacos)",
-    "Cal (20 sacos)",
-    "Ferro 8mm (50 barras)",
-    "Ferro 10mm (50 barras)",
-]
+MATERIAIS_PADRAO = list(QUANTIDADES_PADRAO.keys())
 
 # =====================================================
 # USUÁRIOS
@@ -79,7 +237,6 @@ def conectar_google_sheets():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # Corrige a private_key se necessário
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
@@ -97,175 +254,222 @@ def conectar_google_sheets():
 
 def inicializar_planilha(client):
     """Cria as abas necessárias se não existirem"""
+    if not client:
+        return None
+    
+    if "planilha_inicializada" in st.session_state:
+        return st.session_state.planilha_inicializada
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         
-        # Aba de Casas
         try:
             ws_casas = sheet.worksheet("Casas")
         except:
             ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
             ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
+            time.sleep(1)
         
-        # Aba de Entregas
         try:
             ws_entregas = sheet.worksheet("Entregas")
+            
+            # Verifica se a coluna "Quantidade" existe
+            header = ws_entregas.row_values(1)
+            if len(header) < 6 or header[3] != "Quantidade":
+                # Adiciona a coluna "Quantidade" na posição 4 (índice 3)
+                ws_entregas.insert_cols([[]], col=4)
+                time.sleep(1)
+                ws_entregas.update('A1', [["Município", "Casa", "Material", "Quantidade", "Data Entrega", "Confirmado Por"]])
+                time.sleep(1)
+                st.info("✅ Coluna 'Quantidade' adicionada à planilha!")
         except:
-            ws_entregas = sheet.add_worksheet(title="Entregas", rows=5000, cols=10)
-            ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
+            ws_entregas = sheet.add_worksheet(title="Entregas", rows=10000, cols=10)
+            ws_entregas.update('A1', [["Município", "Casa", "Material", "Quantidade", "Data Entrega", "Confirmado Por"]])
+            time.sleep(1)
         
+        st.session_state.planilha_inicializada = sheet
         return sheet
     except Exception as e:
         st.error(f"Erro ao inicializar planilha: {e}")
         return None
 
 
-def adicionar_casa(client, municipio, casa, usuario):
-    """Adiciona uma nova casa na planilha"""
-    print(f"[DEBUG] Iniciando adicionar_casa: {municipio} - {casa}")
+def carregar_todos_dados(client):
+    """Carrega TODOS os dados de uma vez só"""
+    if not client:
+        return None, None
     
     try:
-        print("[DEBUG] Abrindo planilha...")
         sheet = client.open_by_url(SHEET_URL)
-        print(f"[DEBUG] Planilha aberta: {sheet.title}")
         
-        # Garante que as abas existem
-        print("[DEBUG] Verificando aba Casas...")
-        try:
-            ws_casas = sheet.worksheet("Casas")
-            print("[DEBUG] Aba Casas encontrada")
-        except:
-            print("[DEBUG] Criando aba Casas...")
-            ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
-            ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
-            print("[DEBUG] Aba Casas criada")
+        ws_casas = sheet.worksheet("Casas")
+        dados_casas = ws_casas.get_all_values()
         
-        print("[DEBUG] Verificando aba Entregas...")
-        try:
-            ws_entregas = sheet.worksheet("Entregas")
-            print("[DEBUG] Aba Entregas encontrada")
-        except:
-            print("[DEBUG] Criando aba Entregas...")
-            ws_entregas = sheet.add_worksheet(title="Entregas", rows=5000, cols=10)
-            ws_entregas.update('A1', [["Município", "Casa", "Material", "Entregue", "Data Entrega", "Confirmado Por"]])
-            print("[DEBUG] Aba Entregas criada")
+        time.sleep(1)
         
-        # Verifica se a casa já existe
-        print("[DEBUG] Verificando se casa já existe...")
-        todas_casas = ws_casas.get_all_values()
-        print(f"[DEBUG] Total de linhas na aba Casas: {len(todas_casas)}")
+        ws_entregas = sheet.worksheet("Entregas")
+        dados_entregas = ws_entregas.get_all_values()
         
-        if len(todas_casas) > 1:  # Se tem mais que só o cabeçalho
-            for idx, linha in enumerate(todas_casas[1:], 1):
-                if len(linha) >= 2:
-                    if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
-                        print(f"[DEBUG] Casa duplicada encontrada na linha {idx}")
-                        return False, "Casa já cadastrada neste município!"
+        # Padroniza para 6 colunas (compatibilidade com formato antigo de 5 colunas)
+        dados_entregas_padronizados = []
+        for linha in dados_entregas:
+            if len(linha) == 5:
+                # Formato antigo: adiciona coluna vazia para quantidade
+                linha.insert(3, "")
+            while len(linha) < 6:
+                linha.append("")
+            dados_entregas_padronizados.append(linha)
         
-        print("[DEBUG] Casa não existe, prosseguindo com cadastro...")
-        
-        # Adiciona a casa
-        data_cadastro = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        print(f"[DEBUG] Adicionando linha na aba Casas: [{municipio}, {casa}, {data_cadastro}, {usuario}]")
-        ws_casas.append_row([municipio, casa, data_cadastro, usuario])
-        print("[DEBUG] Casa adicionada com sucesso")
-        
-        # Adiciona os materiais padrão para esta casa
-        print(f"[DEBUG] Adicionando {len(MATERIAIS_PADRAO)} materiais...")
-        for idx, material in enumerate(MATERIAIS_PADRAO, 1):
-            print(f"[DEBUG] Adicionando material {idx}/{len(MATERIAIS_PADRAO)}: {material}")
-            ws_entregas.append_row([municipio, casa, material, "Não", "", ""])
-        
-        print("[DEBUG] Todos os materiais adicionados com sucesso!")
-        return True, f"✅ Casa '{casa}' adicionada com sucesso em {municipio}!"
-        
+        return dados_casas, dados_entregas_padronizados
     except Exception as e:
-        import traceback
-        erro_completo = traceback.format_exc()
-        print(f"[DEBUG] ERRO: {erro_completo}")
-        return False, f"Erro ao adicionar casa: {str(e)}\n\nDetalhes:\n{erro_completo}"
+        st.error(f"Erro ao carregar dados: {e}")
+        return None, None
 
 
-def carregar_casas(client):
-    """Carrega todas as casas cadastradas"""
+def processar_casas(dados_casas):
+    """Processa os dados de casas já carregados"""
+    if not dados_casas or len(dados_casas) <= 1:
+        return {}
+    
+    casas_por_municipio = {}
+    for linha in dados_casas[1:]:
+        if len(linha) >= 2:
+            municipio = linha[0]
+            casa = linha[1]
+            
+            if municipio not in casas_por_municipio:
+                casas_por_municipio[municipio] = []
+            
+            if casa not in casas_por_municipio[municipio]:
+                casas_por_municipio[municipio].append(casa)
+    
+    return casas_por_municipio
+
+
+def processar_entregas(dados_entregas, municipio, casa):
+    """
+    Processa entregas com suporte a quantidades
+    Retorna lista de materiais com histórico de entregas
+    """
+    # Carrega os materiais já entregues da planilha
+    entregas_historico = {}
+    
+    if dados_entregas and len(dados_entregas) > 1:
+        for linha in dados_entregas[1:]:
+            while len(linha) < 6:
+                linha.append("")
+            
+            if linha[0] == municipio and linha[1] == casa and linha[2] != "":
+                material = linha[2]
+                quantidade = linha[3]
+                data_entrega = linha[4]
+                confirmado_por = linha[5]
+                
+                if material not in entregas_historico:
+                    entregas_historico[material] = []
+                
+                entregas_historico[material].append({
+                    "quantidade": quantidade,
+                    "data_entrega": data_entrega,
+                    "confirmado_por": confirmado_por
+                })
+    
+    # Cria lista completa combinando lista padrão com dados da planilha
+    entregas = []
+    for material in MATERIAIS_PADRAO:
+        info_material = QUANTIDADES_PADRAO.get(material, {})
+        tem_quantidade = info_material.get("padrao") is not None or info_material.get("padrao") is None and info_material.get("unidade")
+        
+        if material in entregas_historico:
+            # Calcula quantidade total
+            total_qtd = 0
+            for entrega in entregas_historico[material]:
+                try:
+                    qtd = float(entrega["quantidade"]) if entrega["quantidade"] else 0
+                    total_qtd += qtd
+                except:
+                    pass
+            
+            entregas.append({
+                "material": material,
+                "entregue": True,
+                "historico": entregas_historico[material],
+                "quantidade_total": total_qtd if total_qtd > 0 else None,
+                "info": info_material
+            })
+        else:
+            entregas.append({
+                "material": material,
+                "entregue": False,
+                "historico": [],
+                "quantidade_total": None,
+                "info": info_material
+            })
+    
+    return entregas
+
+
+def adicionar_casa(client, municipio, casa, usuario):
+    """
+    Só adiciona a casa, NÃO adiciona materiais
+    Materiais são adicionados apenas quando marcados como entregues
+    """
+    if not client:
+        return False, "Cliente do Google Sheets não inicializado"
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         ws_casas = sheet.worksheet("Casas")
         
-        dados = ws_casas.get_all_values()[1:]  # Pula cabeçalho
+        # Verifica duplicata
+        todas_casas = ws_casas.get_all_values()
+        if len(todas_casas) > 1:
+            for linha in todas_casas[1:]:
+                if len(linha) >= 2:
+                    if linha[0].strip().lower() == municipio.strip().lower() and linha[1].strip().lower() == casa.strip().lower():
+                        return False, "Casa já cadastrada neste município!"
         
-        casas_por_municipio = {}
-        for linha in dados:
-            if len(linha) >= 2:
-                municipio = linha[0]
-                casa = linha[1]
-                
-                if municipio not in casas_por_municipio:
-                    casas_por_municipio[municipio] = []
-                
-                if casa not in casas_por_municipio[municipio]:
-                    casas_por_municipio[municipio].append(casa)
+        # Adiciona APENAS a casa
+        data_cadastro = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
+        ws_casas.append_row([municipio, casa, data_cadastro, usuario])
         
-        return casas_por_municipio
+        return True, f"✅ Casa '{casa}' cadastrada com sucesso!"
     except Exception as e:
-        st.error(f"Erro ao carregar casas: {e}")
-        return {}
+        import traceback
+        erro_completo = traceback.format_exc()
+        st.error(f"❌ ERRO: {erro_completo}")
+        return False, f"Erro: {str(e)}"
 
 
-def carregar_entregas(client, municipio, casa):
-    """Carrega as entregas de uma casa específica"""
+def salvar_entregas_multiplas(client, municipio, casa, entregas_list, usuario):
+    """
+    Salva múltiplas entregas de uma vez
+    entregas_list = [{"material": "...", "quantidade": None ou float}, ...]
+    """
+    if not client:
+        return False, "Cliente do Google Sheets não inicializado"
+        
     try:
         sheet = client.open_by_url(SHEET_URL)
         ws_entregas = sheet.worksheet("Entregas")
         
-        todos_dados = ws_entregas.get_all_values()
+        data_entrega = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
         
-        entregas = []
-        for i, linha in enumerate(todos_dados[1:], start=2):  # Pula cabeçalho, começa da linha 2
-            if len(linha) >= 6:
-                if linha[0] == municipio and linha[1] == casa:
-                    entregas.append({
-                        "linha": i,
-                        "material": linha[2],
-                        "entregue": linha[3] == "Sim",
-                        "data_entrega": linha[4],
-                        "confirmado_por": linha[5]
-                    })
+        # Prepara todas as linhas
+        linhas = []
+        for entrega in entregas_list:
+            material = entrega["material"]
+            quantidade = entrega.get("quantidade")
+            qtd_str = str(quantidade) if quantidade is not None else ""
+            
+            linhas.append([municipio, casa, material, qtd_str, data_entrega, usuario])
         
-        return entregas
+        # UMA requisição só para adicionar todas as linhas
+        ws_entregas.append_rows(linhas)
+        
+        return True, f"✅ {len(entregas_list)} entregas salvas com sucesso!"
     except Exception as e:
-        st.error(f"Erro ao carregar entregas: {e}")
-        return []
-
-
-def marcar_entrega(client, linha, material, usuario):
-    """Marca um material como entregue"""
-    try:
-        sheet = client.open_by_url(SHEET_URL)
-        ws_entregas = sheet.worksheet("Entregas")
-        
-        data_entrega = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
-        # Atualiza a linha específica (colunas D, E, F)
-        ws_entregas.update(f'D{linha}:F{linha}', [["Sim", data_entrega, usuario]])
-        
-        return True, "Entrega confirmada!"
-    except Exception as e:
-        return False, f"Erro ao marcar entrega: {e}"
-
-
-def desmarcar_entrega(client, linha):
-    """Desmarca um material como entregue"""
-    try:
-        sheet = client.open_by_url(SHEET_URL)
-        ws_entregas = sheet.worksheet("Entregas")
-        
-        # Atualiza a linha específica (colunas D, E, F)
-        ws_entregas.update(f'D{linha}:F{linha}', [["Não", "", ""]])
-        
-        return True, "Entrega desmarcada!"
-    except Exception as e:
-        return False, f"Erro ao desmarcar entrega: {e}"
+        return False, f"Erro ao salvar entregas: {e}"
 
 
 # =====================================================
@@ -340,140 +544,234 @@ def tela_principal():
     
     st.markdown("---")
     
-    # Conecta ao Google Sheets
     client = st.session_state.get("gs_client")
+    
     if not client:
-        st.error("❌ Erro ao conectar com Google Sheets. Verifique as credenciais no Secrets.")
-        st.info("👉 Vá em 'Manage app' → 'Settings' → 'Secrets' e configure corretamente.")
-        st.stop()
+        st.error("❌ Erro ao conectar com Google Sheets.")
+        st.info("👉 Verifique as credenciais em Settings → Secrets")
+        return
     
-    # Inicializa a planilha
-    with st.spinner("Conectando à planilha..."):
-        sheet_result = inicializar_planilha(client)
-        if not sheet_result:
-            st.error("❌ Erro ao acessar a planilha. Verifique se:")
-            st.write("1. A planilha existe e a URL está correta")
-            st.write("2. O service account tem permissão de EDITOR na planilha")
-            st.write(f"3. Email do service account: `controledeentregas@disparo-452622.iam.gserviceaccount.com`")
-            st.stop()
+    sheet_result = inicializar_planilha(client)
+    if not sheet_result:
+        st.error("❌ Erro ao acessar a planilha.")
+        return
     
-    # Tabs
+    with st.spinner("Carregando dados..."):
+        dados_casas, dados_entregas = carregar_todos_dados(client)
+    
+    if dados_casas is None or dados_entregas is None:
+        st.error("❌ Erro ao carregar dados da planilha.")
+        return
+    
+    casas_por_municipio = processar_casas(dados_casas)
+    
+    # Botão para forçar recarga manual
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 4])
+    with col_btn1:
+        if st.button("🔄 Recarregar Dados", use_container_width=True):
+            st.cache_resource.clear()
+            st.rerun()
+    
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
     
     # ===== TAB 1: CONTROLE DE ENTREGAS =====
     with tab1:
         st.subheader("Controle de Entregas")
         
-        casas_por_municipio = carregar_casas(client)
-        
         if not casas_por_municipio:
             st.info("Nenhuma casa cadastrada ainda. Adicione casas na aba 'Adicionar Casa'.")
-            return
-        
-        # Seleção de município
-        municipio_selecionado = st.selectbox("Selecione o Município", MUNICIPIOS)
-        
-        if municipio_selecionado in casas_por_municipio:
-            casas = casas_por_municipio[municipio_selecionado]
+        else:
+            municipio_selecionado = st.selectbox("Selecione o Município", MUNICIPIOS)
             
-            # Exibe cada casa
-            for casa in casas:
-                with st.expander(f"🏠 {casa}", expanded=True):
-                    entregas = carregar_entregas(client, municipio_selecionado, casa)
+            if municipio_selecionado in casas_por_municipio:
+                casas = casas_por_municipio[municipio_selecionado]
+                
+                for casa in casas:
+                    entregas = processar_entregas(dados_entregas, municipio_selecionado, casa)
                     
-                    if not entregas:
-                        st.warning("Nenhum material cadastrado para esta casa.")
-                        continue
-                    
-                    # Cabeçalho
-                    col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
-                    col1.write("**Material**")
-                    col2.write("**Status**")
-                    col3.write("**Data Entrega**")
-                    col4.write("**Confirmado Por**")
-                    
-                    st.markdown("---")
-                    
-                    # Lista de materiais
-                    for item in entregas:
-                        col1, col2, col3, col4 = st.columns([3, 1, 2, 2])
-                        
-                        with col1:
-                            st.write(item["material"])
-                        
-                        with col2:
-                            # Checkbox para marcar/desmarcar
-                            chave = f"check_{municipio_selecionado}_{casa}_{item['linha']}"
-                            
-                            if st.checkbox(
-                                "✅" if item["entregue"] else "❌",
-                                value=item["entregue"],
-                                key=chave,
-                                label_visibility="collapsed"
-                            ):
-                                if not item["entregue"]:
-                                    # Marcar como entregue
-                                    sucesso, msg = marcar_entrega(
-                                        client, 
-                                        item["linha"], 
-                                        item["material"], 
-                                        st.session_state.nome_usuario
-                                    )
-                                    if sucesso:
-                                        st.rerun()
-                            else:
-                                if item["entregue"]:
-                                    # Desmarcar
-                                    sucesso, msg = desmarcar_entrega(client, item["linha"])
-                                    if sucesso:
-                                        st.rerun()
-                        
-                        with col3:
-                            if item["entregue"]:
-                                st.write(f"📅 {item['data_entrega']}")
-                            else:
-                                st.write("Pendente")
-                        
-                        with col4:
-                            if item["entregue"]:
-                                st.write(f"👤 {item['confirmado_por']}")
-                            else:
-                                st.write("-")
-                    
-                    # Estatísticas
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
-                    pendentes = total - entregues
                     
-                    st.markdown("---")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Total", total)
-                    col2.metric("Entregues", entregues)
-                    col3.metric("Pendentes", pendentes)
-        else:
-            st.info(f"Nenhuma casa cadastrada em {municipio_selecionado}")
+                    titulo_expander = f"🏠 {casa}  |  ✅ {entregues}/{total} entregues"
+                    
+                    with st.expander(titulo_expander, expanded=False):
+                        # Usa FORM para evitar recargas a cada checkbox
+                        with st.form(key=f"form_{municipio_selecionado}_{casa}"):
+                            # Cabeçalho
+                            col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
+                            col1.write("**☑️**")
+                            col2.write("**Material**")
+                            col3.write("**Status**")
+                            col4.write("**Quantidade**")
+                            col5.write("**Última Entrega**")
+                            st.markdown("---")
+                            
+                            # Dicionários temporários para coletar seleções
+                            materiais_selecionados = {}
+                            quantidades_selecionadas = {}
+                            
+                            # Lista de materiais com checkboxes
+                            for item in entregas:
+                                col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
+                                
+                                material = item["material"]
+                                info = item["info"]
+                                qtd_padrao = info.get("padrao")
+                                unidade = info.get("unidade", "")
+                                
+                                # Material pode receber quantidade se tem unidade definida
+                                aceita_quantidade = unidade != ""
+                                # Material REQUER input se não tem quantidade padrão
+                                requer_input = qtd_padrao is None and aceita_quantidade
+                                
+                                chave_checkbox = f"check_{municipio_selecionado}_{casa}_{material}"
+                                
+                                # Checkbox apenas para materiais pendentes ou que aceitam quantidade
+                                pode_selecionar = not item["entregue"] or aceita_quantidade
+                                
+                                with col1:
+                                    if pode_selecionar:
+                                        selecionado = st.checkbox(
+                                            "",
+                                            key=chave_checkbox,
+                                            label_visibility="collapsed"
+                                        )
+                                        if selecionado:
+                                            materiais_selecionados[material] = True
+                                    else:
+                                        st.write("")
+                                
+                                with col2:
+                                    st.write(material)
+                                
+                                with col3:
+                                    if item["entregue"]:
+                                        if aceita_quantidade:
+                                            st.write("✅ + ➕")
+                                        else:
+                                            st.write("✅ Entregue")
+                                    else:
+                                        st.write("❌ Pendente")
+                                
+                                with col4:
+                                    # Se requer input de quantidade (materiais variáveis)
+                                    if requer_input and pode_selecionar:
+                                        chave_input_qtd = f"input_qtd_{municipio_selecionado}_{casa}_{material}"
+                                        
+                                        # Define step baseado na unidade
+                                        step = 0.5 if unidade == "m³" else 1.0
+                                        
+                                        qtd_atual = st.number_input(
+                                            f"({unidade})",
+                                            min_value=0.0,
+                                            value=0.0,
+                                            step=step,
+                                            key=chave_input_qtd,
+                                            label_visibility="collapsed"
+                                        )
+                                        quantidades_selecionadas[material] = qtd_atual
+                                    # Se já foi entregue, mostra o total
+                                    elif item["entregue"] and aceita_quantidade:
+                                        qtd_total = item["quantidade_total"]
+                                        if qtd_total and qtd_total > 0:
+                                            # Formata baseado no tipo de número
+                                            if unidade == "m³":
+                                                st.write(f"**{qtd_total:.1f}** {unidade}")
+                                            else:
+                                                st.write(f"**{qtd_total:.0f}** {unidade}")
+                                        elif qtd_padrao:
+                                            # Mostra quantidade padrão se não tem registro
+                                            st.write(f"**{qtd_padrao}** {unidade}")
+                                        else:
+                                            st.write("—")
+                                    else:
+                                        st.write("—")
+                                
+                                with col5:
+                                    if item["entregue"] and item["historico"]:
+                                        ultima = item["historico"][-1]
+                                        if aceita_quantidade and ultima["quantidade"]:
+                                            qtd = ultima["quantidade"]
+                                            st.write(f"{qtd} {unidade} • {ultima['data_entrega'][:10]}")
+                                        else:
+                                            st.write(f"📅 {ultima['data_entrega'][:10]}")
+                                    else:
+                                        st.write("—")
+                            
+                            st.markdown("---")
+                            
+                            # Botão de submit do formulário
+                            col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 2])
+                            with col_btn2:
+                                submitted = st.form_submit_button(
+                                    "💾 Salvar Selecionados",
+                                    use_container_width=True,
+                                    type="primary"
+                                )
+                            
+                            # Processa quando o formulário é submetido
+                            if submitted:
+                                # Filtra apenas os materiais marcados
+                                entregas_para_salvar = []
+                                erro_validacao = False
+                                
+                                for material in materiais_selecionados.keys():
+                                    info = QUANTIDADES_PADRAO.get(material, {})
+                                    qtd_padrao = info.get("padrao")
+                                    
+                                    # Se tem quantidade padrão, usa ela
+                                    if qtd_padrao is not None:
+                                        entregas_para_salvar.append({
+                                            "material": material,
+                                            "quantidade": qtd_padrao
+                                        })
+                                    # Se não tem padrão, precisa ter input do usuário
+                                    else:
+                                        qtd = quantidades_selecionadas.get(material, 0)
+                                        if qtd <= 0:
+                                            st.error(f"⚠️ {material}: quantidade deve ser maior que zero!")
+                                            erro_validacao = True
+                                            break
+                                        entregas_para_salvar.append({
+                                            "material": material,
+                                            "quantidade": qtd
+                                        })
+                                
+                                # Valida se algum material foi selecionado
+                                if len(entregas_para_salvar) == 0:
+                                    st.warning("⚠️ Selecione pelo menos um material para salvar!")
+                                elif not erro_validacao:
+                                    with st.spinner("Salvando entregas..."):
+                                        sucesso, msg = salvar_entregas_multiplas(
+                                            client,
+                                            municipio_selecionado,
+                                            casa,
+                                            entregas_para_salvar,
+                                            st.session_state.nome_usuario
+                                        )
+                                        
+                                        if sucesso:
+                                            st.success(msg)
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error(msg)
+                        
+                        # Estatísticas
+                        pendentes = total - entregues
+                        st.markdown("---")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Total", total)
+                        col2.metric("Entregues", entregues)
+                        col3.metric("Pendentes", pendentes)
+            else:
+                st.info(f"Nenhuma casa cadastrada em {municipio_selecionado}")
     
     # ===== TAB 2: ADICIONAR CASA =====
     with tab2:
         st.subheader("➕ Adicionar Nova Casa")
         
-        st.info("💡 Preencha os dados abaixo para cadastrar uma nova casa e seus materiais")
-        
-        # Debug: Mostra status da conexão
-        with st.expander("🔍 Debug - Status da Conexão"):
-            st.write("**Client conectado:**", client is not None)
-            if client:
-                try:
-                    sheet = client.open_by_url(SHEET_URL)
-                    st.success(f"✅ Planilha acessada: {sheet.title}")
-                    
-                    # Lista as abas existentes
-                    worksheets = sheet.worksheets()
-                    st.write("**Abas encontradas:**")
-                    for ws in worksheets:
-                        st.write(f"- {ws.title} ({ws.row_count} linhas)")
-                except Exception as e:
-                    st.error(f"❌ Erro ao acessar planilha: {e}")
+        st.info(f"💡 Casa será criada instantaneamente! Os {len(MATERIAIS_PADRAO)} materiais aparecem automaticamente para controle.")
         
         col1, col2 = st.columns(2)
         
@@ -485,88 +783,71 @@ def tela_principal():
         
         st.markdown("---")
         
-        col1, col2 = st.columns([1, 3])
-        
-        with col1:
-            adicionar = st.button("➕ Adicionar Casa", use_container_width=True, type="primary")
-        
-        with col2:
-            st.caption("Ao adicionar, serão criados automaticamente os registros de todos os materiais padrão para esta casa.")
-        
-        if adicionar:
-            st.write(f"**DEBUG:** Tentando adicionar casa '{casa_nova}' em '{municipio_novo}'")
-            
+        if st.button("➕ Adicionar Casa", use_container_width=True, type="primary"):
             if not casa_nova or not casa_nova.strip():
-                st.error("❌ Por favor, digite o nome da casa!")
+                st.error("❌ Por favor, informe o nome da casa!")
             else:
                 with st.spinner("Adicionando casa..."):
-                    st.write("**DEBUG:** Chamando função adicionar_casa...")
+                    sucesso, msg = adicionar_casa(
+                        client, 
+                        municipio_novo, 
+                        casa_nova.strip(), 
+                        st.session_state.nome_usuario
+                    )
                     
-                    try:
-                        sucesso, msg = adicionar_casa(
-                            client, 
-                            municipio_novo, 
-                            casa_nova.strip(), 
-                            st.session_state.nome_usuario
-                        )
-                        
-                        st.write(f"**DEBUG:** Sucesso = {sucesso}")
-                        st.write(f"**DEBUG:** Mensagem = {msg}")
-                        
-                        if sucesso:
-                            st.success(msg)
-                            st.balloons()
-                            st.info("🔄 Recarregando em 2 segundos...")
-                            import time
-                            time.sleep(2)
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                    except Exception as e:
-                        import traceback
-                        st.error(f"❌ ERRO CRÍTICO: {e}")
-                        st.code(traceback.format_exc())
+                    if sucesso:
+                        st.success(msg)
+                        st.balloons()
+                        time.sleep(2)
+                        st.cache_resource.clear()
+                        st.rerun()
+                    else:
+                        st.error(msg)
         
-        # Mostra as casas já cadastradas
         st.markdown("---")
         st.subheader("📋 Casas Cadastradas")
         
-        try:
-            casas_cadastradas = carregar_casas(client)
-            
-            if casas_cadastradas:
-                for mun in MUNICIPIOS:
-                    if mun in casas_cadastradas and casas_cadastradas[mun]:
-                        with st.expander(f"📍 {mun} ({len(casas_cadastradas[mun])} casas)"):
-                            for idx, casa_nome in enumerate(casas_cadastradas[mun], 1):
-                                st.write(f"{idx}. {casa_nome}")
-            else:
-                st.info("Nenhuma casa cadastrada ainda.")
-        except Exception as e:
-            st.error(f"Erro ao carregar casas: {e}")
+        if casas_por_municipio:
+            for mun in MUNICIPIOS:
+                if mun in casas_por_municipio and casas_por_municipio[mun]:
+                    with st.expander(f"📍 {mun} ({len(casas_por_municipio[mun])} casas)"):
+                        for idx, casa_nome in enumerate(casas_por_municipio[mun], 1):
+                            st.write(f"{idx}. {casa_nome}")
+        else:
+            st.info("Nenhuma casa cadastrada ainda.")
     
     # ===== TAB 3: RELATÓRIO =====
     with tab3:
-        st.subheader("Relatório de Entregas")
-        
-        casas_por_municipio = carregar_casas(client)
+        st.subheader("📊 Relatório de Entregas")
         
         if not casas_por_municipio:
             st.info("Nenhum dado disponível.")
             return
         
-        # Dados para o relatório
         dados_relatorio = []
         
         for municipio in MUNICIPIOS:
             if municipio in casas_por_municipio:
                 for casa in casas_por_municipio[municipio]:
-                    entregas = carregar_entregas(client, municipio, casa)
+                    entregas = processar_entregas(dados_entregas, municipio, casa)
                     
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
                     pendentes = total - entregues
                     percentual = (entregues / total * 100) if total > 0 else 0
+                    
+                    # Calcula totais de materiais principais
+                    cimento_total = 0
+                    brita_total = 0
+                    areia_total = 0
+                    
+                    for e in entregas:
+                        if e["material"] == "Cimento composto CP II" and e["entregue"]:
+                            cimento_total = e["quantidade_total"] or 0
+                        elif e["material"] == "Pedra brita 19" and e["entregue"]:
+                            brita_total = e["quantidade_total"] or 0
+                        elif e["material"] == "Areia média" and e["entregue"]:
+                            areia_total = e["quantidade_total"] or 0
                     
                     dados_relatorio.append({
                         "Município": municipio,
@@ -574,12 +855,29 @@ def tela_principal():
                         "Total": total,
                         "Entregues": entregues,
                         "Pendentes": pendentes,
-                        "% Concluído": f"{percentual:.1f}%"
+                        "% Concluído": f"{percentual:.1f}%",
+                        "Cimento (sacos)": f"{cimento_total:.0f}" if cimento_total > 0 else "—",
+                        "Brita (m³)": f"{brita_total:.1f}" if brita_total > 0 else "—",
+                        "Areia (m³)": f"{areia_total:.1f}" if areia_total > 0 else "—"
                     })
         
         if dados_relatorio:
             df = pd.DataFrame(dados_relatorio)
             st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            st.subheader("📈 Resumo Geral")
+            
+            total_geral = sum(d["Total"] for d in dados_relatorio)
+            entregues_geral = sum(d["Entregues"] for d in dados_relatorio)
+            pendentes_geral = sum(d["Pendentes"] for d in dados_relatorio)
+            perc_geral = (entregues_geral / total_geral * 100) if total_geral > 0 else 0
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total de Materiais", total_geral)
+            col2.metric("Entregues", entregues_geral)
+            col3.metric("Pendentes", pendentes_geral)
+            col4.metric("% Concluído", f"{perc_geral:.1f}%")
         else:
             st.info("Nenhum dado disponível.")
 
@@ -589,14 +887,12 @@ def tela_principal():
 # =====================================================
 
 def main():
-    # Inicializa session_state
     if "usuario" not in st.session_state:
         st.session_state.usuario = None
     
     if "gs_client" not in st.session_state:
         st.session_state.gs_client = conectar_google_sheets()
     
-    # Verifica login
     if st.session_state.usuario is None:
         tela_login()
     else:
