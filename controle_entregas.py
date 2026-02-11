@@ -28,7 +28,6 @@ SCOPES = [
 ]
 
 # =====================================================
-<<<<<<< HEAD
 # QUANTIDADES PADRÃO POR MATERIAL
 # =====================================================
 
@@ -188,15 +187,6 @@ QUANTIDADES_PADRAO = {
     "Chuveiro com cano": {"unidade": "un", "padrao": 1},
     "Barra de apoio 70cm": {"unidade": "un", "padrao": 1},
     "Cadeira para banho": {"unidade": "un", "padrao": 1},
-=======
-# MATERIAIS COM QUANTIDADE
-# =====================================================
-
-MATERIAIS_COM_QUANTIDADE = {
-    "Cimento composto CP II": "sacos",
-    "Pedra brita 19": "m³",
-    "Areia média": "m³"
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
 }
 
 # =====================================================
@@ -208,165 +198,7 @@ MUNICIPIOS = [
     "Pedra Lavrada",
 ]
 
-<<<<<<< HEAD
 MATERIAIS_PADRAO = list(QUANTIDADES_PADRAO.keys())
-=======
-MATERIAIS_PADRAO = [
-    # 🧱 ALVENARIA
-    "Pedra brita 19",
-    "Pedra rocha fundação",
-    "Areia média",
-    "Cimento composto CP II",
-    "Aço vergalhão 10mm",
-    "Aço vergalhão 5,2mm",
-    "Arame recozido",
-    "Tijolo cerâmico",
-    "Trilho para laje",
-    "Tábuas 0,30 x 3m",
-    "Tábuas 0,10 x 3m",
-    "Lajotas",
-    
-    # 🏠 TELHADO
-    "Telha cerâmica",
-    "Linha 3/5 – 7,5m",
-    "Linha 3/5 – 4m",
-    "Linha 3/5 – 5m",
-    "Linha 3/5 – 2m",
-    "Barrote de 3m",
-    "Barrote 4,5m",
-    "Caibros 5,5m",
-    "Ripas",
-    "Canaletas grandes",
-    "Canaletas pequenas",
-    "Sapata",
-    
-    # 🪟 ESQUADRIAS / ACABAMENTO
-    "Janela 1x1,20",
-    "Janela 1,00x1",
-    "Janela 50x50",
-    "Porta semi-oca",
-    "Porta almofadada",
-    "Coluna 5/16 – 3m",
-    "Cerâmica piso",
-    "Cerâmica parede",
-    "Argamassa 15kg",
-    "Rejunte",
-    "Forra de porta (pct)",
-    "Dobradiças p/ janela",
-    "Dobradiças p/ portas",
-    "Ferrolho redondo",
-    "Parafusos p/ janela, porta e ferragem",
-    "Pivoltante",
-    "Caixa d'água 500L",
-    "Caixa d'água 1000L",
-    
-    # 🚿 BANHEIRO / PINTURA
-    "Kit banheiro",
-    "Fechadura externa",
-    "Fechadura interna",
-    "Fechadura banheiro",
-    "Lixa 120",
-    "Verniz 3L",
-    "Tinta esmalte sintético 15L",
-    "Selador 18L",
-    "Cal para pintura",
-    "Rolo para pintura 23cm",
-    "Rolo para pintura 9cm",
-    "Brocha para pintura",
-    "Pincel 1 1/2 polegadas",
-    
-    # ⚡ ELÉTRICA
-    "Quadro distribuição 6 disjuntores",
-    "Quadro de luz completo",
-    "Pontalete energia",
-    "Eletroduto PVC corrugado",
-    "Lâmpada",
-    "Interruptor de 2 sessões",
-    "Interruptor de 1 sessão",
-    "Tomadas 10A",
-    "Tomadas 20A",
-    "Fita isolante",
-    "Fio 4mm 750V",
-    "Fio 2,5mm",
-    "Fio 1,5mm",
-    "Disjuntor 16 amperes",
-    "Disjuntor 10 amperes",
-    "Disjuntor 25 amperes",
-    "Disjuntor 32 amperes",
-    "Disjuntor 40 amperes DR",
-    "Bocal de lâmpadas",
-    "Plafon",
-    "Cano eletroduto",
-    "Capacete para eletrodutos",
-    "Haste para aterramento",
-    "Cone para aterramento",
-    "Curva eletroduto 3/4",
-    "Tomada da internet",
-    "Tomada para TV",
-    "Caixa PVC 4x2",
-    "Fixa fio (pct)",
-    "Conector para haste",
-    
-    # 🚰 HIDRÁULICA
-    "Joelho PVC 25mm",
-    "Joelho redução 25x1/2\"",
-    "Tê 25mm",
-    "Registro gaveta cromado",
-    "Registro pressão",
-    "Adaptador curto SR 25mm x 3/4\"",
-    "Joelho 40mm 90°",
-    "Joelho 45° 50mm esgoto série normal",
-    "Joelho 90° 50mm esgoto série normal",
-    "Luva PVC SR 25mm x 3/4\" rosca externa",
-    "Tê 100x50mm",
-    "Tubo PVC 25mm 6m",
-    "Tubo PVC esgoto 100mm 6m",
-    "Tubo PVC esgoto 75mm 6m",
-    "Tubo PVC esgoto 50mm 6m",
-    "Tubo PVC esgoto 40mm 6m",
-    "Tubo PVC água 40mm 1,5m",
-    "Ralo sifonado",
-    "Tê 40mm",
-    "Tê 50mm",
-    "Y esgoto 100x50mm",
-    "Joelho esgoto 50mm 45°",
-    "Joelho esgoto 50mm",
-    "Joelho esgoto 40mm",
-    "Joelho esgoto 40mm 45°",
-    "Joelho esgoto 100mm",
-    "Cola de cano 175g",
-    "Sifão sifonado",
-    "Torneira p/ lavatório",
-    "Torneira p/ lavanderia",
-    "Torneira p/ pia de cozinha",
-    "Calha de PVC",
-    "Terminal PVC",
-    "Tampa PVC",
-    "Emenda PVC para bica",
-    "Suporte para bica",
-    "Parafusos para suporte da bica",
-    "Vedanel",
-    "Flange 40mm",
-    "Flange 25mm",
-    "Válvula para lavatório",
-    "Válvula para pia inox",
-    "Chicote flexível 40cm",
-    "Tanque p/ lavar roupa",
-    "Cantoneira 40cm",
-    "Parafuso com bucha 10mm",
-    "Parafuso para tanque",
-    "Pia de banheiro",
-    "Arame da cisterna",
-    "Vaso acoplado",
-    "Veda rosca",
-    
-    # 🚿 ACESSIBILIDADE
-    "Parafuso p/ vaso sanitário",
-    "Chuveiro com cano",
-    "Barra de apoio 70cm",
-    "Cadeira para banho",
-]
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
 
 # =====================================================
 # USUÁRIOS
@@ -545,7 +377,6 @@ def processar_entregas(dados_entregas, municipio, casa):
     # Cria lista completa combinando lista padrão com dados da planilha
     entregas = []
     for material in MATERIAIS_PADRAO:
-<<<<<<< HEAD
         info_material = QUANTIDADES_PADRAO.get(material, {})
         tem_quantidade = info_material.get("padrao") is not None or info_material.get("padrao") is None and info_material.get("unidade")
         
@@ -566,44 +397,13 @@ def processar_entregas(dados_entregas, municipio, casa):
                 "quantidade_total": total_qtd if total_qtd > 0 else None,
                 "info": info_material
             })
-=======
-        if material in entregas_historico:
-            # Calcula quantidade total se for material quantitativo
-            if material in MATERIAIS_COM_QUANTIDADE:
-                total_qtd = 0
-                for entrega in entregas_historico[material]:
-                    try:
-                        qtd = float(entrega["quantidade"]) if entrega["quantidade"] else 0
-                        total_qtd += qtd
-                    except:
-                        pass
-                
-                entregas.append({
-                    "material": material,
-                    "entregue": True,
-                    "historico": entregas_historico[material],
-                    "quantidade_total": total_qtd
-                })
-            else:
-                # Material normal (sem quantidade)
-                entregas.append({
-                    "material": material,
-                    "entregue": True,
-                    "historico": entregas_historico[material],
-                    "quantidade_total": None
-                })
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
         else:
             entregas.append({
                 "material": material,
                 "entregue": False,
                 "historico": [],
-<<<<<<< HEAD
                 "quantidade_total": None,
                 "info": info_material
-=======
-                "quantidade_total": None
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
             })
     
     return entregas
@@ -641,49 +441,6 @@ def adicionar_casa(client, municipio, casa, usuario):
         return False, f"Erro: {str(e)}"
 
 
-<<<<<<< HEAD
-def salvar_entregas_multiplas(client, municipio, casa, entregas_list, usuario):
-    """
-    Salva múltiplas entregas de uma vez
-    entregas_list = [{"material": "...", "quantidade": None ou float}, ...]
-=======
-def marcar_entrega(client, municipio, casa, material, usuario, quantidade=None):
-    """
-    Adiciona uma nova linha na planilha quando marca como entregue
-    Agora com suporte a quantidade
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
-    """
-    if not client:
-        return False, "Cliente do Google Sheets não inicializado"
-        
-    try:
-        sheet = client.open_by_url(SHEET_URL)
-        ws_entregas = sheet.worksheet("Entregas")
-        
-        data_entrega = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
-        
-<<<<<<< HEAD
-        # Prepara todas as linhas
-        linhas = []
-        for entrega in entregas_list:
-            material = entrega["material"]
-            quantidade = entrega.get("quantidade")
-            qtd_str = str(quantidade) if quantidade is not None else ""
-            
-            linhas.append([municipio, casa, material, qtd_str, data_entrega, usuario])
-        
-=======
-        # Formata quantidade para string (vazio se None)
-        qtd_str = str(quantidade) if quantidade is not None else ""
-        
-        # Adiciona nova linha na planilha
-        ws_entregas.append_row([municipio, casa, material, qtd_str, data_entrega, usuario])
-        
-        return True, "Entrega confirmada!"
-    except Exception as e:
-        return False, f"Erro ao marcar entrega: {e}"
-
-
 def salvar_entregas_multiplas(client, municipio, casa, entregas_list, usuario):
     """
     Salva múltiplas entregas de uma vez
@@ -707,7 +464,6 @@ def salvar_entregas_multiplas(client, municipio, casa, entregas_list, usuario):
             
             linhas.append([municipio, casa, material, qtd_str, data_entrega, usuario])
         
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
         # UMA requisição só para adicionar todas as linhas
         ws_entregas.append_rows(linhas)
         
@@ -859,7 +615,6 @@ def tela_principal():
                                 col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
                                 
                                 material = item["material"]
-<<<<<<< HEAD
                                 info = item["info"]
                                 qtd_padrao = info.get("padrao")
                                 unidade = info.get("unidade", "")
@@ -873,13 +628,6 @@ def tela_principal():
                                 
                                 # Checkbox apenas para materiais pendentes ou que aceitam quantidade
                                 pode_selecionar = not item["entregue"] or aceita_quantidade
-=======
-                                tem_quantidade = material in MATERIAIS_COM_QUANTIDADE
-                                chave_checkbox = f"check_{municipio_selecionado}_{casa}_{material}"
-                                
-                                # Checkbox apenas para materiais pendentes ou que podem adicionar quantidade
-                                pode_selecionar = not item["entregue"] or tem_quantidade
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                 
                                 with col1:
                                     if pode_selecionar:
@@ -898,11 +646,7 @@ def tela_principal():
                                 
                                 with col3:
                                     if item["entregue"]:
-<<<<<<< HEAD
                                         if aceita_quantidade:
-=======
-                                        if tem_quantidade:
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                             st.write("✅ + ➕")
                                         else:
                                             st.write("✅ Entregue")
@@ -910,7 +654,6 @@ def tela_principal():
                                         st.write("❌ Pendente")
                                 
                                 with col4:
-<<<<<<< HEAD
                                     # Se requer input de quantidade (materiais variáveis)
                                     if requer_input and pode_selecionar:
                                         chave_input_qtd = f"input_qtd_{municipio_selecionado}_{casa}_{material}"
@@ -918,27 +661,15 @@ def tela_principal():
                                         # Define step baseado na unidade
                                         step = 0.5 if unidade == "m³" else 1.0
                                         
-=======
-                                    # Input de quantidade sempre visível para materiais quantitativos selecionáveis
-                                    if tem_quantidade and pode_selecionar:
-                                        unidade = MATERIAIS_COM_QUANTIDADE[material]
-                                        chave_input_qtd = f"input_qtd_{municipio_selecionado}_{casa}_{material}"
-                                        
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                         qtd_atual = st.number_input(
                                             f"({unidade})",
                                             min_value=0.0,
                                             value=0.0,
-<<<<<<< HEAD
                                             step=step,
-=======
-                                            step=0.5 if unidade == "m³" else 1.0,
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                             key=chave_input_qtd,
                                             label_visibility="collapsed"
                                         )
                                         quantidades_selecionadas[material] = qtd_atual
-<<<<<<< HEAD
                                     # Se já foi entregue, mostra o total
                                     elif item["entregue"] and aceita_quantidade:
                                         qtd_total = item["quantidade_total"]
@@ -953,24 +684,13 @@ def tela_principal():
                                             st.write(f"**{qtd_padrao}** {unidade}")
                                         else:
                                             st.write("—")
-=======
-                                    elif tem_quantidade and item["entregue"]:
-                                        unidade = MATERIAIS_COM_QUANTIDADE[material]
-                                        qtd_total = item["quantidade_total"]
-                                        st.write(f"**{qtd_total:.1f}** {unidade}")
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                     else:
                                         st.write("—")
                                 
                                 with col5:
                                     if item["entregue"] and item["historico"]:
                                         ultima = item["historico"][-1]
-<<<<<<< HEAD
                                         if aceita_quantidade and ultima["quantidade"]:
-=======
-                                        if tem_quantidade:
-                                            unidade = MATERIAIS_COM_QUANTIDADE[material]
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                             qtd = ultima["quantidade"]
                                             st.write(f"{qtd} {unidade} • {ultima['data_entrega'][:10]}")
                                         else:
@@ -996,7 +716,6 @@ def tela_principal():
                                 erro_validacao = False
                                 
                                 for material in materiais_selecionados.keys():
-<<<<<<< HEAD
                                     info = QUANTIDADES_PADRAO.get(material, {})
                                     qtd_padrao = info.get("padrao")
                                     
@@ -1008,9 +727,6 @@ def tela_principal():
                                         })
                                     # Se não tem padrão, precisa ter input do usuário
                                     else:
-=======
-                                    if material in MATERIAIS_COM_QUANTIDADE:
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                         qtd = quantidades_selecionadas.get(material, 0)
                                         if qtd <= 0:
                                             st.error(f"⚠️ {material}: quantidade deve ser maior que zero!")
@@ -1020,14 +736,6 @@ def tela_principal():
                                             "material": material,
                                             "quantidade": qtd
                                         })
-<<<<<<< HEAD
-=======
-                                    else:
-                                        entregas_para_salvar.append({
-                                            "material": material,
-                                            "quantidade": None
-                                        })
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                                 
                                 # Valida se algum material foi selecionado
                                 if len(entregas_para_salvar) == 0:
@@ -1128,30 +836,18 @@ def tela_principal():
                     pendentes = total - entregues
                     percentual = (entregues / total * 100) if total > 0 else 0
                     
-<<<<<<< HEAD
                     # Calcula totais de materiais principais
-=======
-                    # Calcula totais de materiais quantitativos
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                     cimento_total = 0
                     brita_total = 0
                     areia_total = 0
                     
                     for e in entregas:
                         if e["material"] == "Cimento composto CP II" and e["entregue"]:
-<<<<<<< HEAD
                             cimento_total = e["quantidade_total"] or 0
                         elif e["material"] == "Pedra brita 19" and e["entregue"]:
                             brita_total = e["quantidade_total"] or 0
                         elif e["material"] == "Areia média" and e["entregue"]:
                             areia_total = e["quantidade_total"] or 0
-=======
-                            cimento_total = e["quantidade_total"]
-                        elif e["material"] == "Pedra brita 19" and e["entregue"]:
-                            brita_total = e["quantidade_total"]
-                        elif e["material"] == "Areia média" and e["entregue"]:
-                            areia_total = e["quantidade_total"]
->>>>>>> 4522e225fbb065631d42a680f67e7742944728da
                     
                     dados_relatorio.append({
                         "Município": municipio,
