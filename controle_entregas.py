@@ -35,8 +35,8 @@ QUANTIDADES_PADRAO = {
     # 🧱 ALVENARIA - Materiais variáveis (usuário define quantidade)
     "Cimento composto CP II": {"unidade": "sacos", "padrao": None},  # Variável
     "Pedra brita 19": {"unidade": "m³", "padrao": None},  # Variável
-    "Pedra rocha fundação": {"unidade": "m³", "padrao": None},  # Variável
     "Areia média": {"unidade": "m³", "padrao": None},  # Variável
+    "Pedra rocha fundação": {"unidade": "m³", "padrao": None},  # Variável
     
     # ALVENARIA - Materiais com quantidade fixa
     "Aço vergalhão 10mm": {"unidade": "varas", "padrao": 20},
