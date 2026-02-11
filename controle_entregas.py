@@ -230,12 +230,12 @@ USUARIOS = {
 }
 
 # =====================================================
-# FUNÇÕES OTIMIZADAS DO GOOGLE SHEETS
+# FUNÇÕES DO GOOGLE SHEETS
 # =====================================================
 
 @st.cache_resource
 def conectar_google_sheets():
-    """Conecta ao Google Sheets - CACHE PERMANENTE"""
+    """Conecta ao Google Sheets"""
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         
@@ -255,11 +255,10 @@ def conectar_google_sheets():
 
 
 def inicializar_planilha(client):
-    """Cria as abas necessárias se não existirem - OTIMIZADO"""
+    """Cria as abas necessárias se não existirem"""
     if not client:
         return None
     
-    # Usa session_state para evitar verificações repetidas
     if "planilha_inicializada" in st.session_state:
         return st.session_state.planilha_inicializada
         
@@ -297,23 +296,21 @@ def inicializar_planilha(client):
         return None
 
 
-@st.cache_data(ttl=180)  # ⚡ CACHE POR 3 MINUTOS
-def carregar_todos_dados_cached(_client):
-    """
-    OTIMIZAÇÃO 1: Cache de 3 minutos
-    OTIMIZAÇÃO 2: Batch request (carrega tudo de uma vez)
-    """
-    if not _client:
+def carregar_todos_dados(client):
+    """Carrega TODOS os dados de uma vez só"""
+    if not client:
         return None, None
     
     try:
-        sheet = _client.open_by_url(SHEET_URL)
+        sheet = client.open_by_url(SHEET_URL)
         
-        # 🚀 BATCH REQUEST - Uma chamada só!
-        result = sheet.values_batch_get(['Casas!A:Z', 'Entregas!A:Z'])
+        ws_casas = sheet.worksheet("Casas")
+        dados_casas = ws_casas.get_all_values()
         
-        dados_casas = result['valueRanges'][0].get('values', [])
-        dados_entregas = result['valueRanges'][1].get('values', [])
+        time.sleep(1)
+        
+        ws_entregas = sheet.worksheet("Entregas")
+        dados_entregas = ws_entregas.get_all_values()
         
         # Padroniza para 6 colunas (compatibilidade com formato antigo de 5 colunas)
         dados_entregas_padronizados = []
@@ -331,9 +328,8 @@ def carregar_todos_dados_cached(_client):
         return None, None
 
 
-@st.cache_data(ttl=180)  # ⚡ CACHE POR 3 MINUTOS
-def processar_casas_cached(dados_casas):
-    """OTIMIZADO: Cache no processamento de casas"""
+def processar_casas(dados_casas):
+    """Processa os dados de casas já carregados"""
     if not dados_casas or len(dados_casas) <= 1:
         return {}
     
@@ -352,15 +348,11 @@ def processar_casas_cached(dados_casas):
     return casas_por_municipio
 
 
-@st.cache_data(ttl=180)  # ⚡ CACHE POR 3 MINUTOS
-def processar_entregas_cached(dados_entregas_tuple, municipio, casa):
+def processar_entregas(dados_entregas, municipio, casa):
     """
-    OTIMIZAÇÃO 3: Lazy Loading - Processa apenas a casa selecionada
-    OTIMIZAÇÃO 4: Cache por município/casa
+    Processa entregas com suporte a quantidades
+    Retorna lista de materiais com histórico de entregas
     """
-    # Converte tuple de volta para list (necessário para cache)
-    dados_entregas = [list(linha) for linha in dados_entregas_tuple]
-    
     # Carrega os materiais já entregues da planilha
     entregas_historico = {}
     
@@ -369,7 +361,6 @@ def processar_entregas_cached(dados_entregas_tuple, municipio, casa):
             while len(linha) < 6:
                 linha.append("")
             
-            # 🎯 LAZY LOADING: Filtra apenas esta casa
             if linha[0] == municipio and linha[1] == casa and linha[2] != "":
                 material = linha[2]
                 quantidade = linha[3]
@@ -427,7 +418,7 @@ def processar_entregas_cached(dados_entregas_tuple, municipio, casa):
 def adicionar_casa(client, municipio, casa, usuario):
     """
     Só adiciona a casa, NÃO adiciona materiais
-    OTIMIZADO: Limpa cache após modificação
+    Materiais são adicionados apenas quando marcados como entregues
     """
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
@@ -448,9 +439,6 @@ def adicionar_casa(client, municipio, casa, usuario):
         data_cadastro = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
         ws_casas.append_row([municipio, casa, data_cadastro, usuario])
         
-        # 🔄 LIMPA CACHE após modificação
-        st.cache_data.clear()
-        
         return True, f"✅ Casa '{casa}' cadastrada com sucesso!"
     except Exception as e:
         import traceback
@@ -462,7 +450,7 @@ def adicionar_casa(client, municipio, casa, usuario):
 def marcar_entrega(client, municipio, casa, material, usuario, quantidade=None):
     """
     Adiciona uma nova linha na planilha quando marca como entregue
-    OTIMIZADO: Limpa cache após modificação
+    Agora com suporte a quantidade
     """
     if not client:
         return False, "Cliente do Google Sheets não inicializado"
@@ -479,12 +467,40 @@ def marcar_entrega(client, municipio, casa, material, usuario, quantidade=None):
         # Adiciona nova linha na planilha
         ws_entregas.append_row([municipio, casa, material, qtd_str, data_entrega, usuario])
         
-        # 🔄 LIMPA CACHE após modificação
-        st.cache_data.clear()
-        
         return True, "Entrega confirmada!"
     except Exception as e:
         return False, f"Erro ao marcar entrega: {e}"
+
+
+def salvar_entregas_multiplas(client, municipio, casa, entregas_list, usuario):
+    """
+    Salva múltiplas entregas de uma vez
+    entregas_list = [{"material": "...", "quantidade": None ou float}, ...]
+    """
+    if not client:
+        return False, "Cliente do Google Sheets não inicializado"
+        
+    try:
+        sheet = client.open_by_url(SHEET_URL)
+        ws_entregas = sheet.worksheet("Entregas")
+        
+        data_entrega = datetime.now(TZ_BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
+        
+        # Prepara todas as linhas
+        linhas = []
+        for entrega in entregas_list:
+            material = entrega["material"]
+            quantidade = entrega.get("quantidade")
+            qtd_str = str(quantidade) if quantidade is not None else ""
+            
+            linhas.append([municipio, casa, material, qtd_str, data_entrega, usuario])
+        
+        # UMA requisição só para adicionar todas as linhas
+        ws_entregas.append_rows(linhas)
+        
+        return True, f"✅ {len(entregas_list)} entregas salvas com sucesso!"
+    except Exception as e:
+        return False, f"Erro ao salvar entregas: {e}"
 
 
 # =====================================================
@@ -540,11 +556,11 @@ def tela_login():
 
 
 # =====================================================
-# INTERFACE - PRINCIPAL (SUPER OTIMIZADA)
+# INTERFACE - PRINCIPAL
 # =====================================================
 
 def tela_principal():
-    """Tela principal do sistema - VERSÃO SUPER OTIMIZADA"""
+    """Tela principal do sistema"""
     
     # Header
     col1, col2 = st.columns([3, 1])
@@ -571,36 +587,21 @@ def tela_principal():
         st.error("❌ Erro ao acessar a planilha.")
         return
     
-    # 🚀 CARREGAMENTO OTIMIZADO COM CACHE
-    with st.spinner("⚡ Carregando dados (cache: 3 min)..."):
-        dados_casas, dados_entregas = carregar_todos_dados_cached(client)
+    with st.spinner("Carregando dados..."):
+        dados_casas, dados_entregas = carregar_todos_dados(client)
     
     if dados_casas is None or dados_entregas is None:
         st.error("❌ Erro ao carregar dados da planilha.")
         return
     
-    # 🧠 SESSION STATE: Armazena dados processados
-    if 'casas_processadas' not in st.session_state or st.session_state.get('ultima_atualizacao', 0) < time.time() - 180:
-        casas_por_municipio = processar_casas_cached(tuple(map(tuple, dados_casas)))
-        st.session_state.casas_processadas = casas_por_municipio
-        st.session_state.ultima_atualizacao = time.time()
-    else:
-        casas_por_municipio = st.session_state.casas_processadas
+    casas_por_municipio = processar_casas(dados_casas)
     
     # Botão para forçar recarga manual
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 4])
     with col_btn1:
-        if st.button("🔄 Recarregar", use_container_width=True):
-            st.cache_data.clear()
+        if st.button("🔄 Recarregar Dados", use_container_width=True):
             st.cache_resource.clear()
-            if 'casas_processadas' in st.session_state:
-                del st.session_state.casas_processadas
             st.rerun()
-    
-    with col_btn2:
-        # Indicador de cache
-        tempo_cache = int(time.time() - st.session_state.get('ultima_atualizacao', time.time()))
-        st.caption(f"⏱️ Cache: {tempo_cache}s")
     
     tab1, tab2, tab3 = st.tabs(["📋 Controle de Entregas", "🏠 Adicionar Casa", "📊 Relatório"])
     
@@ -617,100 +618,99 @@ def tela_principal():
                 casas = casas_por_municipio[municipio_selecionado]
                 
                 for casa in casas:
-                    # 🎯 LAZY LOADING: Processa apenas quando necessário
-                    dados_entregas_tuple = tuple(map(tuple, dados_entregas))
-                    entregas = processar_entregas_cached(dados_entregas_tuple, municipio_selecionado, casa)
+                    entregas = processar_entregas(dados_entregas, municipio_selecionado, casa)
                     
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
                     
-                    # 🔧 FIX: Controle de expander individualizado e isolado
-                    chave_expander = f"exp_{municipio_selecionado}_{casa}".replace(" ", "_")
-                    
-                    # Apenas expande se for a casa onde houve ação recente
-                    casa_acao_recente = st.session_state.get('casa_ultima_acao', '')
-                    expanded_default = (casa_acao_recente == f"{municipio_selecionado}_{casa}")
+                    chave_expander = f"expander_{municipio_selecionado}_{casa}"
+                    expanded_default = st.session_state.get(chave_expander, False)
                     
                     titulo_expander = f"🏠 {casa}  |  ✅ {entregues}/{total} entregues"
                     
                     with st.expander(titulo_expander, expanded=expanded_default):
+                        st.session_state[chave_expander] = True
+                        
+                        # Inicializa estado de seleção para esta casa
+                        chave_selecao = f"selecao_{municipio_selecionado}_{casa}"
+                        if chave_selecao not in st.session_state:
+                            st.session_state[chave_selecao] = {}
+                        
+                        # Inicializa estado de quantidades para esta casa
+                        chave_quantidades = f"quantidades_{municipio_selecionado}_{casa}"
+                        if chave_quantidades not in st.session_state:
+                            st.session_state[chave_quantidades] = {}
+                        
                         # Cabeçalho
-                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2.5])
-                        col1.write("**Material**")
-                        col2.write("**Status**")
-                        col3.write("**Quantidade**")
-                        col4.write("**Última Entrega**")
+                        col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
+                        col1.write("**☑️**")
+                        col2.write("**Material**")
+                        col3.write("**Status**")
+                        col4.write("**Quantidade**")
+                        col5.write("**Última Entrega**")
                         st.markdown("---")
                         
+                        # Lista de materiais com checkboxes
+                        materiais_para_salvar = []
+                        
                         for item in entregas:
-                            col1, col2, col3, col4 = st.columns([3, 2, 2, 2.5])
+                            col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
                             
                             material = item["material"]
                             tem_quantidade = material in MATERIAIS_COM_QUANTIDADE
+                            chave_checkbox = f"check_{municipio_selecionado}_{casa}_{material}"
+                            
+                            # Checkbox apenas para materiais pendentes ou que podem adicionar quantidade
+                            pode_selecionar = not item["entregue"] or tem_quantidade
                             
                             with col1:
-                                st.write(material)
+                                if pode_selecionar:
+                                    selecionado = st.checkbox(
+                                        "",
+                                        key=chave_checkbox,
+                                        label_visibility="collapsed"
+                                    )
+                                    if selecionado:
+                                        st.session_state[chave_selecao][material] = True
+                                    elif material in st.session_state[chave_selecao]:
+                                        del st.session_state[chave_selecao][material]
+                                else:
+                                    st.write("")
                             
                             with col2:
-                                if item["entregue"]:
-                                    # Material já entregue
-                                    if tem_quantidade:
-                                        # Permite adicionar mais quantidade
-                                        btn_key = f"btn_add_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
-                                        if st.button("➕ Adicionar", key=btn_key, type="secondary", use_container_width=True):
-                                            # Abre modal para adicionar quantidade
-                                            st.session_state[f"modal_{municipio_selecionado}_{casa}_{material}"] = True
-                                            st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
-                                            st.rerun()
-                                    else:
-                                        # Material normal - não pode modificar
-                                        st.button("✅ Entregue", 
-                                                key=f"btn_{municipio_selecionado}_{casa}_{material}".replace(" ", "_"), 
-                                                type="primary", 
-                                                use_container_width=True, 
-                                                disabled=True)
-                                else:
-                                    # Material pendente
-                                    if tem_quantidade:
-                                        # Abre modal para primeira entrega
-                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
-                                        if st.button("📦 Registrar", key=btn_key, type="secondary", use_container_width=True):
-                                            st.session_state[f"modal_{municipio_selecionado}_{casa}_{material}"] = True
-                                            st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
-                                            st.rerun()
-                                    else:
-                                        # Material normal - marca como entregue IMEDIATAMENTE
-                                        btn_key = f"btn_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
-                                        
-                                        if st.button("❌ Pendente", key=btn_key, type="secondary", use_container_width=True):
-                                            # 🚀 OTIMIZAÇÃO: Marcar e mostrar feedback SEM rerun imediato
-                                            with st.spinner("Salvando..."):
-                                                sucesso, msg = marcar_entrega(
-                                                    client, 
-                                                    municipio_selecionado, 
-                                                    casa, 
-                                                    material, 
-                                                    st.session_state.nome_usuario
-                                                )
-                                            
-                                            if sucesso:
-                                                st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
-                                                st.toast("✅ Entrega confirmada!", icon="✅")
-                                                # Pequeno delay para o usuário ver o toast
-                                                time.sleep(0.3)
-                                                st.rerun()
-                                            else:
-                                                st.error(msg)
+                                st.write(material)
                             
                             with col3:
-                                if tem_quantidade and item["entregue"]:
+                                if item["entregue"]:
+                                    if tem_quantidade:
+                                        st.write("✅ + ➕")
+                                    else:
+                                        st.write("✅ Entregue")
+                                else:
+                                    st.write("❌ Pendente")
+                            
+                            with col4:
+                                # Input de quantidade se for material quantitativo E estiver selecionado
+                                if tem_quantidade and st.session_state[chave_selecao].get(material, False):
+                                    unidade = MATERIAIS_COM_QUANTIDADE[material]
+                                    chave_input_qtd = f"input_qtd_{municipio_selecionado}_{casa}_{material}"
+                                    
+                                    qtd_atual = st.number_input(
+                                        f"({unidade})",
+                                        min_value=0.0,
+                                        step=0.5 if unidade == "m³" else 1.0,
+                                        key=chave_input_qtd,
+                                        label_visibility="collapsed"
+                                    )
+                                    st.session_state[chave_quantidades][material] = qtd_atual
+                                elif tem_quantidade and item["entregue"]:
                                     unidade = MATERIAIS_COM_QUANTIDADE[material]
                                     qtd_total = item["quantidade_total"]
                                     st.write(f"**{qtd_total:.1f}** {unidade}")
                                 else:
                                     st.write("—")
                             
-                            with col4:
+                            with col5:
                                 if item["entregue"] and item["historico"]:
                                     ultima = item["historico"][-1]
                                     if tem_quantidade:
@@ -721,62 +721,60 @@ def tela_principal():
                                         st.write(f"📅 {ultima['data_entrega'][:10]}")
                                 else:
                                     st.write("—")
+                        
+                        st.markdown("---")
+                        
+                        # Botão de salvar selecionados
+                        num_selecionados = len(st.session_state[chave_selecao])
+                        
+                        if num_selecionados > 0:
+                            col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 2])
                             
-                            # MODAL para registrar quantidade
-                            modal_key = f"modal_{municipio_selecionado}_{casa}_{material}"
-                            if st.session_state.get(modal_key, False):
-                                with st.container():
-                                    st.markdown("---")
-                                    unidade = MATERIAIS_COM_QUANTIDADE[material]
+                            with col_btn2:
+                                label_botao = f"💾 Salvar Selecionados ({num_selecionados})"
+                                if st.button(label_botao, key=f"salvar_{municipio_selecionado}_{casa}", 
+                                           use_container_width=True, type="primary"):
                                     
-                                    col_a, col_b, col_c = st.columns([1, 2, 1])
-                                    with col_b:
-                                        st.write(f"**{material}**")
-                                        
-                                        quantidade_input = st.number_input(
-                                            f"Quantidade ({unidade})",
-                                            min_value=0.0,
-                                            step=0.5 if unidade == "m³" else 1.0,
-                                            key=f"input_{municipio_selecionado}_{casa}_{material}".replace(" ", "_")
-                                        )
-                                        
-                                        col_x, col_y = st.columns(2)
-                                        
-                                        with col_x:
-                                            if st.button("✅ Confirmar", 
-                                                       key=f"confirmar_{municipio_selecionado}_{casa}_{material}".replace(" ", "_"), 
-                                                       use_container_width=True, 
-                                                       type="primary"):
-                                                if quantidade_input > 0:
-                                                    with st.spinner("Salvando..."):
-                                                        sucesso, msg = marcar_entrega(
-                                                            client, 
-                                                            municipio_selecionado, 
-                                                            casa, 
-                                                            material,
-                                                            st.session_state.nome_usuario, 
-                                                            quantidade_input
-                                                        )
-                                                    
-                                                    if sucesso:
-                                                        del st.session_state[modal_key]
-                                                        st.session_state['casa_ultima_acao'] = f"{municipio_selecionado}_{casa}"
-                                                        st.toast("✅ Quantidade registrada!", icon="✅")
-                                                        time.sleep(0.3)
-                                                        st.rerun()
-                                                    else:
-                                                        st.error(msg)
-                                                else:
-                                                    st.warning("⚠️ Quantidade deve ser maior que zero!")
-                                        
-                                        with col_y:
-                                            if st.button("❌ Cancelar", 
-                                                       key=f"cancelar_{municipio_selecionado}_{casa}_{material}".replace(" ", "_"),
-                                                       use_container_width=True):
-                                                del st.session_state[modal_key]
+                                    # Valida quantidades antes de salvar
+                                    erro_validacao = False
+                                    entregas_para_salvar = []
+                                    
+                                    for material in st.session_state[chave_selecao].keys():
+                                        if material in MATERIAIS_COM_QUANTIDADE:
+                                            qtd = st.session_state[chave_quantidades].get(material, 0)
+                                            if qtd <= 0:
+                                                st.error(f"⚠️ {material}: quantidade deve ser maior que zero!")
+                                                erro_validacao = True
+                                                break
+                                            entregas_para_salvar.append({
+                                                "material": material,
+                                                "quantidade": qtd
+                                            })
+                                        else:
+                                            entregas_para_salvar.append({
+                                                "material": material,
+                                                "quantidade": None
+                                            })
+                                    
+                                    if not erro_validacao:
+                                        with st.spinner("Salvando entregas..."):
+                                            sucesso, msg = salvar_entregas_multiplas(
+                                                client,
+                                                municipio_selecionado,
+                                                casa,
+                                                entregas_para_salvar,
+                                                st.session_state.nome_usuario
+                                            )
+                                            
+                                            if sucesso:
+                                                st.success(msg)
+                                                # Limpa seleções
+                                                st.session_state[chave_selecao] = {}
+                                                st.session_state[chave_quantidades] = {}
+                                                time.sleep(1)
                                                 st.rerun()
-                                    
-                                    st.markdown("---")
+                                            else:
+                                                st.error(msg)
                         
                         # Estatísticas
                         pendentes = total - entregues
@@ -819,7 +817,8 @@ def tela_principal():
                     if sucesso:
                         st.success(msg)
                         st.balloons()
-                        time.sleep(1)
+                        time.sleep(2)
+                        st.cache_resource.clear()
                         st.rerun()
                     else:
                         st.error(msg)
@@ -844,14 +843,12 @@ def tela_principal():
             st.info("Nenhum dado disponível.")
             return
         
-        # 🚀 OTIMIZAÇÃO: Processa relatório com cache
         dados_relatorio = []
-        dados_entregas_tuple = tuple(map(tuple, dados_entregas))
         
         for municipio in MUNICIPIOS:
             if municipio in casas_por_municipio:
                 for casa in casas_por_municipio[municipio]:
-                    entregas = processar_entregas_cached(dados_entregas_tuple, municipio, casa)
+                    entregas = processar_entregas(dados_entregas, municipio, casa)
                     
                     total = len(entregas)
                     entregues = sum(1 for e in entregas if e["entregue"])
