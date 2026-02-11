@@ -631,150 +631,144 @@ def tela_principal():
                     with st.expander(titulo_expander, expanded=expanded_default):
                         st.session_state[chave_expander] = True
                         
-                        # Inicializa estado de seleção para esta casa
-                        chave_selecao = f"selecao_{municipio_selecionado}_{casa}"
-                        if chave_selecao not in st.session_state:
-                            st.session_state[chave_selecao] = {}
-                        
-                        # Inicializa estado de quantidades para esta casa
-                        chave_quantidades = f"quantidades_{municipio_selecionado}_{casa}"
-                        if chave_quantidades not in st.session_state:
-                            st.session_state[chave_quantidades] = {}
-                        
-                        # Cabeçalho
-                        col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
-                        col1.write("**☑️**")
-                        col2.write("**Material**")
-                        col3.write("**Status**")
-                        col4.write("**Quantidade**")
-                        col5.write("**Última Entrega**")
-                        st.markdown("---")
-                        
-                        # Lista de materiais com checkboxes
-                        materiais_para_salvar = []
-                        
-                        for item in entregas:
+                        # Usa FORM para evitar recargas a cada checkbox
+                        with st.form(key=f"form_{municipio_selecionado}_{casa}"):
+                            # Cabeçalho
                             col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
+                            col1.write("**☑️**")
+                            col2.write("**Material**")
+                            col3.write("**Status**")
+                            col4.write("**Quantidade**")
+                            col5.write("**Última Entrega**")
+                            st.markdown("---")
                             
-                            material = item["material"]
-                            tem_quantidade = material in MATERIAIS_COM_QUANTIDADE
-                            chave_checkbox = f"check_{municipio_selecionado}_{casa}_{material}"
+                            # Dicionários temporários para coletar seleções
+                            materiais_selecionados = {}
+                            quantidades_selecionadas = {}
                             
-                            # Checkbox apenas para materiais pendentes ou que podem adicionar quantidade
-                            pode_selecionar = not item["entregue"] or tem_quantidade
-                            
-                            with col1:
-                                if pode_selecionar:
-                                    selecionado = st.checkbox(
-                                        "",
-                                        key=chave_checkbox,
-                                        label_visibility="collapsed"
-                                    )
-                                    if selecionado:
-                                        st.session_state[chave_selecao][material] = True
-                                    elif material in st.session_state[chave_selecao]:
-                                        del st.session_state[chave_selecao][material]
-                                else:
-                                    st.write("")
-                            
-                            with col2:
-                                st.write(material)
-                            
-                            with col3:
-                                if item["entregue"]:
-                                    if tem_quantidade:
-                                        st.write("✅ + ➕")
+                            # Lista de materiais com checkboxes
+                            for item in entregas:
+                                col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1.5, 1.5, 2])
+                                
+                                material = item["material"]
+                                tem_quantidade = material in MATERIAIS_COM_QUANTIDADE
+                                chave_checkbox = f"check_{municipio_selecionado}_{casa}_{material}"
+                                
+                                # Checkbox apenas para materiais pendentes ou que podem adicionar quantidade
+                                pode_selecionar = not item["entregue"] or tem_quantidade
+                                
+                                with col1:
+                                    if pode_selecionar:
+                                        selecionado = st.checkbox(
+                                            "",
+                                            key=chave_checkbox,
+                                            label_visibility="collapsed"
+                                        )
+                                        if selecionado:
+                                            materiais_selecionados[material] = True
                                     else:
-                                        st.write("✅ Entregue")
-                                else:
-                                    st.write("❌ Pendente")
-                            
-                            with col4:
-                                # Input de quantidade se for material quantitativo E estiver selecionado
-                                if tem_quantidade and st.session_state[chave_selecao].get(material, False):
-                                    unidade = MATERIAIS_COM_QUANTIDADE[material]
-                                    chave_input_qtd = f"input_qtd_{municipio_selecionado}_{casa}_{material}"
-                                    
-                                    qtd_atual = st.number_input(
-                                        f"({unidade})",
-                                        min_value=0.0,
-                                        step=0.5 if unidade == "m³" else 1.0,
-                                        key=chave_input_qtd,
-                                        label_visibility="collapsed"
-                                    )
-                                    st.session_state[chave_quantidades][material] = qtd_atual
-                                elif tem_quantidade and item["entregue"]:
-                                    unidade = MATERIAIS_COM_QUANTIDADE[material]
-                                    qtd_total = item["quantidade_total"]
-                                    st.write(f"**{qtd_total:.1f}** {unidade}")
-                                else:
-                                    st.write("—")
-                            
-                            with col5:
-                                if item["entregue"] and item["historico"]:
-                                    ultima = item["historico"][-1]
-                                    if tem_quantidade:
-                                        unidade = MATERIAIS_COM_QUANTIDADE[material]
-                                        qtd = ultima["quantidade"]
-                                        st.write(f"{qtd} {unidade} • {ultima['data_entrega'][:10]}")
-                                    else:
-                                        st.write(f"📅 {ultima['data_entrega'][:10]}")
-                                else:
-                                    st.write("—")
-                        
-                        st.markdown("---")
-                        
-                        # Botão de salvar selecionados
-                        num_selecionados = len(st.session_state[chave_selecao])
-                        
-                        if num_selecionados > 0:
-                            col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 2])
-                            
-                            with col_btn2:
-                                label_botao = f"💾 Salvar Selecionados ({num_selecionados})"
-                                if st.button(label_botao, key=f"salvar_{municipio_selecionado}_{casa}", 
-                                           use_container_width=True, type="primary"):
-                                    
-                                    # Valida quantidades antes de salvar
-                                    erro_validacao = False
-                                    entregas_para_salvar = []
-                                    
-                                    for material in st.session_state[chave_selecao].keys():
-                                        if material in MATERIAIS_COM_QUANTIDADE:
-                                            qtd = st.session_state[chave_quantidades].get(material, 0)
-                                            if qtd <= 0:
-                                                st.error(f"⚠️ {material}: quantidade deve ser maior que zero!")
-                                                erro_validacao = True
-                                                break
-                                            entregas_para_salvar.append({
-                                                "material": material,
-                                                "quantidade": qtd
-                                            })
+                                        st.write("")
+                                
+                                with col2:
+                                    st.write(material)
+                                
+                                with col3:
+                                    if item["entregue"]:
+                                        if tem_quantidade:
+                                            st.write("✅ + ➕")
                                         else:
-                                            entregas_para_salvar.append({
-                                                "material": material,
-                                                "quantidade": None
-                                            })
-                                    
-                                    if not erro_validacao:
-                                        with st.spinner("Salvando entregas..."):
-                                            sucesso, msg = salvar_entregas_multiplas(
-                                                client,
-                                                municipio_selecionado,
-                                                casa,
-                                                entregas_para_salvar,
-                                                st.session_state.nome_usuario
-                                            )
-                                            
-                                            if sucesso:
-                                                st.success(msg)
-                                                # Limpa seleções
-                                                st.session_state[chave_selecao] = {}
-                                                st.session_state[chave_quantidades] = {}
-                                                time.sleep(1)
-                                                st.rerun()
-                                            else:
-                                                st.error(msg)
+                                            st.write("✅ Entregue")
+                                    else:
+                                        st.write("❌ Pendente")
+                                
+                                with col4:
+                                    # Input de quantidade sempre visível para materiais quantitativos selecionáveis
+                                    if tem_quantidade and pode_selecionar:
+                                        unidade = MATERIAIS_COM_QUANTIDADE[material]
+                                        chave_input_qtd = f"input_qtd_{municipio_selecionado}_{casa}_{material}"
+                                        
+                                        qtd_atual = st.number_input(
+                                            f"({unidade})",
+                                            min_value=0.0,
+                                            value=0.0,
+                                            step=0.5 if unidade == "m³" else 1.0,
+                                            key=chave_input_qtd,
+                                            label_visibility="collapsed"
+                                        )
+                                        quantidades_selecionadas[material] = qtd_atual
+                                    elif tem_quantidade and item["entregue"]:
+                                        unidade = MATERIAIS_COM_QUANTIDADE[material]
+                                        qtd_total = item["quantidade_total"]
+                                        st.write(f"**{qtd_total:.1f}** {unidade}")
+                                    else:
+                                        st.write("—")
+                                
+                                with col5:
+                                    if item["entregue"] and item["historico"]:
+                                        ultima = item["historico"][-1]
+                                        if tem_quantidade:
+                                            unidade = MATERIAIS_COM_QUANTIDADE[material]
+                                            qtd = ultima["quantidade"]
+                                            st.write(f"{qtd} {unidade} • {ultima['data_entrega'][:10]}")
+                                        else:
+                                            st.write(f"📅 {ultima['data_entrega'][:10]}")
+                                    else:
+                                        st.write("—")
+                            
+                            st.markdown("---")
+                            
+                            # Botão de submit do formulário
+                            num_selecionados = len(materiais_selecionados)
+                            
+                            col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 2])
+                            with col_btn2:
+                                label_botao = f"💾 Salvar Selecionados ({num_selecionados})" if num_selecionados > 0 else "💾 Salvar Selecionados"
+                                submitted = st.form_submit_button(
+                                    label_botao,
+                                    use_container_width=True,
+                                    type="primary",
+                                    disabled=(num_selecionados == 0)
+                                )
+                            
+                            # Processa quando o formulário é submetido
+                            if submitted and num_selecionados > 0:
+                                # Valida quantidades antes de salvar
+                                erro_validacao = False
+                                entregas_para_salvar = []
+                                
+                                for material in materiais_selecionados.keys():
+                                    if material in MATERIAIS_COM_QUANTIDADE:
+                                        qtd = quantidades_selecionadas.get(material, 0)
+                                        if qtd <= 0:
+                                            st.error(f"⚠️ {material}: quantidade deve ser maior que zero!")
+                                            erro_validacao = True
+                                            break
+                                        entregas_para_salvar.append({
+                                            "material": material,
+                                            "quantidade": qtd
+                                        })
+                                    else:
+                                        entregas_para_salvar.append({
+                                            "material": material,
+                                            "quantidade": None
+                                        })
+                                
+                                if not erro_validacao:
+                                    with st.spinner("Salvando entregas..."):
+                                        sucesso, msg = salvar_entregas_multiplas(
+                                            client,
+                                            municipio_selecionado,
+                                            casa,
+                                            entregas_para_salvar,
+                                            st.session_state.nome_usuario
+                                        )
+                                        
+                                        if sucesso:
+                                            st.success(msg)
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error(msg)
                         
                         # Estatísticas
                         pendentes = total - entregues
