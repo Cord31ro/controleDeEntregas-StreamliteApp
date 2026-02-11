@@ -713,23 +713,19 @@ def tela_principal():
                             st.markdown("---")
                             
                             # Botão de submit do formulário
-                            num_selecionados = len(materiais_selecionados)
-                            
                             col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 2])
                             with col_btn2:
-                                label_botao = f"💾 Salvar Selecionados ({num_selecionados})" if num_selecionados > 0 else "💾 Salvar Selecionados"
                                 submitted = st.form_submit_button(
-                                    label_botao,
+                                    "💾 Salvar Selecionados",
                                     use_container_width=True,
-                                    type="primary",
-                                    disabled=(num_selecionados == 0)
+                                    type="primary"
                                 )
                             
                             # Processa quando o formulário é submetido
-                            if submitted and num_selecionados > 0:
-                                # Valida quantidades antes de salvar
-                                erro_validacao = False
+                            if submitted:
+                                # Filtra apenas os materiais marcados
                                 entregas_para_salvar = []
+                                erro_validacao = False
                                 
                                 for material in materiais_selecionados.keys():
                                     if material in MATERIAIS_COM_QUANTIDADE:
@@ -748,7 +744,10 @@ def tela_principal():
                                             "quantidade": None
                                         })
                                 
-                                if not erro_validacao:
+                                # Valida se algum material foi selecionado
+                                if len(entregas_para_salvar) == 0:
+                                    st.warning("⚠️ Selecione pelo menos um material para salvar!")
+                                elif not erro_validacao:
                                     with st.spinner("Salvando entregas..."):
                                         sucesso, msg = salvar_entregas_multiplas(
                                             client,
