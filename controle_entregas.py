@@ -4,7 +4,13 @@ from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 import hashlib
+import hmac
+import os
+import re
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 
 # Timezone de Brasília (UTC-3)
 TZ_BRASILIA = timezone(timedelta(hours=-3))
@@ -19,13 +25,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# URL da planilha
-SHEET_URL = "https://docs.google.com/spreadsheets/d/17pK_8AgmQISuaLGdZD5FoiQzQBlPKOY6YV2Xh96RCqs"
+# URL da planilha (carregada de st.secrets ou variável de ambiente)
+SHEET_URL = st.secrets.get("SHEET_URL", os.environ.get(
+    "SHEET_URL",
+    "https://docs.google.com/spreadsheets/d/17pK_8AgmQISuaLGdZD5FoiQzQBlPKOY6YV2Xh96RCqs"
+))
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.file",
 ]
+
+# Configurações de segurança
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_SECONDS = 60
+MAX_HOUSE_NAME_LENGTH = 100
 
 # =====================================================
 # QUANTIDADES PADRÃO POR MATERIAL
@@ -204,28 +218,62 @@ MATERIAIS_PADRAO = list(QUANTIDADES_PADRAO.keys())
 # USUÁRIOS
 # =====================================================
 
-USUARIOS = {
-    "gutemberg": {
-        "nome": "Gutemberg Martins",
-        "pin": "0000",
-        "admin": True
-    },
-    "severino": {
-        "nome": "Severino Cordeiro",
-        "pin": "0101",
-        "admin": False
-    },
-    "virgilho": {
-        "nome": "Virgilho Cordeiro",
-        "pin": "0209",
-        "admin": False
-    },
-    "gutemberg_filho": {
-        "nome": "Gutemberg Filho",
-        "pin": "2004",
-        "admin": False
-    },
-}
+# =====================================================
+# USUÁRIOS - Carregados de st.secrets (recomendado) ou fallback hardcoded
+# Para configurar via st.secrets, adicione em .streamlit/secrets.toml:
+#   [usuarios.gutemberg]
+#   nome = "Gutemberg Martins"
+#   pin_hash = "<hash_do_pin>"
+#   pin_salt = "<salt_hex>"
+#   admin = true
+# Use a função gerar_hash_pin() para gerar hash e salt.
+# =====================================================
+
+def gerar_hash_pin(pin):
+    """Gera hash seguro com salt para um PIN. Use para criar entries em secrets.toml."""
+    salt = os.urandom(32)
+    pin_hash = hashlib.pbkdf2_hmac('sha256', pin.encode(), salt, 100_000)
+    return pin_hash.hex(), salt.hex()
+
+
+def _carregar_usuarios():
+    """Carrega usuários de st.secrets ou fallback para configuração padrão."""
+    try:
+        if "usuarios" in st.secrets:
+            usuarios = {}
+            for username in st.secrets["usuarios"]:
+                user_data = dict(st.secrets["usuarios"][username])
+                usuarios[username] = {
+                    "nome": user_data["nome"],
+                    "pin_hash": user_data["pin_hash"],
+                    "pin_salt": user_data["pin_salt"],
+                    "admin": user_data.get("admin", False),
+                }
+            return usuarios
+    except Exception:
+        pass
+
+    # Fallback: gera hashes a partir dos PINs padrão
+    # AVISO: Em produção, mova estes dados para st.secrets!
+    _default_users = {
+        "gutemberg": {"nome": "Gutemberg Martins", "pin": "0000", "admin": True},
+        "severino": {"nome": "Severino Cordeiro", "pin": "0101", "admin": False},
+        "virgilho": {"nome": "Virgilho Cordeiro", "pin": "0209", "admin": False},
+        "gutemberg_filho": {"nome": "Gutemberg Filho", "pin": "2004", "admin": False},
+    }
+    usuarios = {}
+    for username, data in _default_users.items():
+        pin_hash, pin_salt = gerar_hash_pin(data["pin"])
+        usuarios[username] = {
+            "nome": data["nome"],
+            "pin_hash": pin_hash,
+            "pin_salt": pin_salt,
+            "admin": data["admin"],
+        }
+    return usuarios
+
+
+USUARIOS = _carregar_usuarios()
 
 # =====================================================
 # FUNÇÕES DO GOOGLE SHEETS
@@ -265,7 +313,7 @@ def inicializar_planilha(client):
         
         try:
             ws_casas = sheet.worksheet("Casas")
-        except:
+        except gspread.WorksheetNotFound:
             ws_casas = sheet.add_worksheet(title="Casas", rows=1000, cols=10)
             ws_casas.update('A1', [["Município", "Casa", "Data Cadastro", "Cadastrado Por"]])
             time.sleep(1)
@@ -282,7 +330,7 @@ def inicializar_planilha(client):
                 ws_entregas.update('A1', [["Município", "Casa", "Material", "Quantidade", "Data Entrega", "Confirmado Por"]])
                 time.sleep(1)
                 st.info("✅ Coluna 'Quantidade' adicionada à planilha!")
-        except:
+        except gspread.WorksheetNotFound:
             ws_entregas = sheet.add_worksheet(title="Entregas", rows=10000, cols=10)
             ws_entregas.update('A1', [["Município", "Casa", "Material", "Quantidade", "Data Entrega", "Confirmado Por"]])
             time.sleep(1)
@@ -387,7 +435,7 @@ def processar_entregas(dados_entregas, municipio, casa):
                 try:
                     qtd = float(entrega["quantidade"]) if entrega["quantidade"] else 0
                     total_qtd += qtd
-                except:
+                except (ValueError, TypeError):
                     pass
             
             entregas.append({
@@ -435,10 +483,8 @@ def adicionar_casa(client, municipio, casa, usuario):
         
         return True, f"✅ Casa '{casa}' cadastrada com sucesso!"
     except Exception as e:
-        import traceback
-        erro_completo = traceback.format_exc()
-        st.error(f"❌ ERRO: {erro_completo}")
-        return False, f"Erro: {str(e)}"
+        logger.exception("Erro ao adicionar casa")
+        return False, "Erro interno ao adicionar casa. Tente novamente."
 
 
 def salvar_entregas_multiplas(client, municipio, casa, entregas_list, usuario):
@@ -476,18 +522,56 @@ def salvar_entregas_multiplas(client, municipio, casa, entregas_list, usuario):
 # FUNÇÕES DE AUTENTICAÇÃO
 # =====================================================
 
-def hash_pin(pin):
-    """Hash simples do PIN"""
-    return hashlib.sha256(pin.encode()).hexdigest()
+def hash_pin(pin, salt_hex):
+    """Hash seguro do PIN usando PBKDF2 com salt."""
+    salt = bytes.fromhex(salt_hex)
+    return hashlib.pbkdf2_hmac('sha256', pin.encode(), salt, 100_000).hex()
 
 
 def verificar_login(username, pin):
-    """Verifica se o login é válido"""
+    """Verifica se o login é válido usando comparação em tempo constante."""
     if username in USUARIOS:
-        pin_hash_correto = hash_pin(USUARIOS[username]["pin"])
-        pin_hash_digitado = hash_pin(pin)
-        return pin_hash_correto == pin_hash_digitado
+        user = USUARIOS[username]
+        pin_hash_digitado = hash_pin(pin, user["pin_salt"])
+        return hmac.compare_digest(pin_hash_digitado, user["pin_hash"])
     return False
+
+
+def _verificar_bloqueio_login(username):
+    """Verifica se o usuário está bloqueado por excesso de tentativas."""
+    if "login_attempts" not in st.session_state:
+        st.session_state.login_attempts = {}
+    
+    attempts = st.session_state.login_attempts.get(username, {"count": 0, "locked_until": None})
+    
+    if attempts["locked_until"]:
+        now = datetime.now(TZ_BRASILIA)
+        if now < attempts["locked_until"]:
+            remaining = (attempts["locked_until"] - now).seconds
+            return False, f"Usuário bloqueado. Tente novamente em {remaining}s."
+        else:
+            st.session_state.login_attempts[username] = {"count": 0, "locked_until": None}
+    
+    return True, ""
+
+
+def _registrar_tentativa_login(username, sucesso):
+    """Registra tentativa de login (com ou sem sucesso)."""
+    if "login_attempts" not in st.session_state:
+        st.session_state.login_attempts = {}
+    
+    if sucesso:
+        st.session_state.login_attempts[username] = {"count": 0, "locked_until": None}
+        return
+    
+    attempts = st.session_state.login_attempts.get(username, {"count": 0, "locked_until": None})
+    attempts["count"] += 1
+    
+    if attempts["count"] >= MAX_LOGIN_ATTEMPTS:
+        attempts["locked_until"] = datetime.now(TZ_BRASILIA) + timedelta(seconds=LOCKOUT_SECONDS)
+        logger.warning("Usuário '%s' bloqueado por excesso de tentativas", username)
+    
+    st.session_state.login_attempts[username] = attempts
 
 
 # =====================================================
@@ -512,14 +596,24 @@ def tela_login():
         pin = st.text_input("Digite seu PIN", type="password", max_chars=4)
         
         if st.button("Entrar", use_container_width=True):
-            if verificar_login(username, pin):
+            permitido, msg_bloqueio = _verificar_bloqueio_login(username)
+            if not permitido:
+                st.error(f"🔒 {msg_bloqueio}")
+            elif verificar_login(username, pin):
+                _registrar_tentativa_login(username, sucesso=True)
                 st.session_state.usuario = username
                 st.session_state.nome_usuario = USUARIOS[username]["nome"]
                 st.session_state.is_admin = USUARIOS[username]["admin"]
                 st.success(f"Bem-vindo, {USUARIOS[username]['nome']}!")
                 st.rerun()
             else:
-                st.error("❌ PIN incorreto!")
+                _registrar_tentativa_login(username, sucesso=False)
+                attempts = st.session_state.login_attempts.get(username, {"count": 0})
+                remaining = MAX_LOGIN_ATTEMPTS - attempts["count"]
+                if remaining > 0:
+                    st.error(f"❌ PIN incorreto! {remaining} tentativa(s) restante(s).")
+                else:
+                    st.error("🔒 Muitas tentativas. Aguarde 60 segundos.")
         
         st.markdown("---")
 
@@ -784,8 +878,13 @@ def tela_principal():
         st.markdown("---")
         
         if st.button("➕ Adicionar Casa", use_container_width=True, type="primary"):
-            if not casa_nova or not casa_nova.strip():
+            casa_nova_limpa = casa_nova.strip() if casa_nova else ""
+            if not casa_nova_limpa:
                 st.error("❌ Por favor, informe o nome da casa!")
+            elif len(casa_nova_limpa) > MAX_HOUSE_NAME_LENGTH:
+                st.error(f"❌ Nome da casa muito longo! Máximo {MAX_HOUSE_NAME_LENGTH} caracteres.")
+            elif not re.match(r'^[\w\s\-\.°ºªçãõáéíóúâêîôûàèìòùäëïöü,/()nº]+$', casa_nova_limpa, re.UNICODE):
+                st.error("❌ Nome da casa contém caracteres inválidos!")
             else:
                 with st.spinner("Adicionando casa..."):
                     sucesso, msg = adicionar_casa(
